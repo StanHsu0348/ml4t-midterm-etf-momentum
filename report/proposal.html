@@ -11,7 +11,7 @@ img { max-width: 100%; display: block; margin: 4pt auto; page-break-inside: avoi
 code { font-size: 8.5pt; background: #f4f4f4; padding: 0 2pt; } .meta { color: #555; font-size: 9pt; }
 blockquote { margin: 4pt 0; padding: 2pt 8pt; border-left: 3px solid #4C72B0; background: #f3f6fb; }
 </style></head><body><h1>跨資產 ETF 動能 × 波動狀態：一次完整的 ML4T 研究循環</h1>
-<p class="meta">ML for Algorithmic Trading · Midterm Proposal　|　徐旻鉉　|　2026-11-08　|　setup_version v1　|　規格雜湊 <code>7e75995d042147ae</code>（holdout 執行前凍結）</p>
+<p class="meta">ML for Algorithmic Trading · Midterm Proposal　|　作者：　　　　|　2026-11-08　|　setup_version v1　|　規格雜湊 <code>7e75995d042147ae</code>（holdout 執行前凍結）</p>
 
 <blockquote>
 <p><strong>摘要</strong>　以 100 檔跨資產 ETF（2006–2025，Yahoo Finance）建立月頻、只做多的排名策略：機制是「資金移動緩慢、投資人反應不足」造成 6–12 個月相對強弱延續，並假設高波動期間（動能崩潰）會讓這個效果失效。我依 ML4T 流程完成一圈：先寫好 <code>setup.yaml</code> 與驗證協定並封存 2024–2025 holdout → 時間點正確的資料管線 → 22 個候選特徵、五道關卡篩選（0 PROCEED／9 REVISE／8 STOP）→ 規則／Ridge／LightGBM 階梯 → 含成本、配置與風控的回測 → holdout 前的洩漏檢查 → <strong>只跑一次</strong> holdout。部署模型（LightGBM）在驗證期日 IC 0.078 [0.042, 0.113]、淨 Sharpe 0.63 [−0.02, 1.29]；holdout 日 IC 0.064 [−0.014, 0.142]、淨 Sharpe 1.08 [−0.31, 2.47]，<strong>預先登錄的確認檢定通過，但兩個信賴區間都含 0</strong>，且在 holdout 中 ML 的優勢沒有轉成投組優勢（Sharpe 低於 12-1 規則的 1.35 與 60/40 的 1.39）。Deflated Sharpe（N = 93 次試驗）只有 0.28（驗證）與 0.17（holdout）。結論：依 Ch. 20 屬於「<strong>never resolved</strong>」型態（兩段淨 Sharpe 區間皆含 0）；訊號方向維持，但價值在投組轉換關卡流失。另外，稽核後以重新下載的資料（調整因子僅差約 10⁻⁶）重跑開發期，Optuna 會選出不同的超參數，部署規則也改選 12-1 規則，顯示 ML 相對優勢並不穩健。證據不足以投入資金；下一步是降低轉換損失（換手），而不是再調參數。</p>
@@ -1494,7 +1494,7 @@ blockquote { margin: 4pt 0; padding: 2pt 8pt; border-left: 3px solid #4C72B0; ba
 <tr>
 <td>5%</td>
 <td>watch：檢查 parity 與資料</td>
-<td>研究者（徐旻鉉）</td>
+<td>研究者</td>
 </tr>
 <tr>
 <td>10%</td>

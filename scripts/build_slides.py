@@ -136,7 +136,7 @@ text(s, 0.8, 2.75, 11.5, 0.8, ["一次完整的 ML4T 研究循環：從假說到
 for i, (big, lab) in enumerate([("100", "檔跨資產 ETF，2006–2025"), ("93", "次記帳試驗（餵給 DSR）"), ("1", "次 holdout 觸碰（有紀錄）")]):
     text(s, 0.8 + i * 3.9, 4.3, 3.6, 0.9, [big], size=54, bold=True, color=AMBER)
     text(s, 0.8 + i * 3.9, 5.25, 3.6, 0.5, [lab], size=15, color=WHITE)
-text(s, 0.8, 6.45, 11, 0.4, ["徐旻鉉　·　Machine Learning for Algorithmic Trading　·　2026-11"], size=14, color=RGBColor(0x9A, 0xA8, 0xA8))
+text(s, 0.8, 6.45, 11, 0.4, ["Machine Learning for Algorithmic Trading　·　2026-11"], size=14, color=RGBColor(0x9A, 0xA8, 0xA8))
 s.notes_slide.notes_text_frame.text = ("大家好，我的期中是把 ML4T 流程完整走一圈：100 檔跨資產 ETF、月頻只做多。"
     "重點不是 Sharpe 有多高，而是流程：所有調整都記帳，總共 93 次試驗；holdout 在第一週封存，最後只碰一次，而且有存取紀錄。")
 
