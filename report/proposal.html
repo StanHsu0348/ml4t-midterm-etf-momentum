@@ -1,0 +1,1582 @@
+<!doctype html><html lang='zh-Hant'><head><meta charset='utf-8'><title>proposal</title><style>
+@page { size: A4; margin: 16mm 15mm 16mm 15mm; }
+body { font-family: "PingFang TC", "Heiti TC", "Noto Sans CJK TC", sans-serif; font-size: 10.5pt; line-height: 1.6; color: #1a1a1a; }
+h1 { font-size: 17pt; margin: 0 0 4pt; } h2 { font-size: 13pt; border-bottom: 1.5px solid #333; padding-bottom: 2pt; margin-top: 14pt; }
+h3 { font-size: 11pt; margin: 10pt 0 3pt; } p { margin: 4pt 0; }
+table { border-collapse: collapse; width: 100%; font-size: 8.3pt; margin: 5pt 0; page-break-inside: avoid; }
+th, td { border: 1px solid #bbb; padding: 2pt 4pt; text-align: left; vertical-align: top; } th { background: #eef2f6; }
+img { max-width: 100%; display: block; margin: 4pt auto; page-break-inside: avoid; }
+.fig { text-align: center; font-size: 8.5pt; color: #444; margin-bottom: 6pt; page-break-inside: avoid; }
+.break { page-break-before: always; } .wcb { background: #fff6e6; border-left: 3px solid #e6a23c; padding: 4pt 8pt; margin: 6pt 0; font-size: 9pt; }
+code { font-size: 8.5pt; background: #f4f4f4; padding: 0 2pt; } .meta { color: #555; font-size: 9pt; }
+blockquote { margin: 4pt 0; padding: 2pt 8pt; border-left: 3px solid #4C72B0; background: #f3f6fb; }
+</style></head><body><h1>跨資產 ETF 動能 × 波動狀態：一次完整的 ML4T 研究循環</h1>
+<p class="meta">ML for Algorithmic Trading · Midterm Proposal　|　徐旻鉉　|　2026-11-08　|　setup_version v1　|　規格雜湊 <code>7e75995d042147ae</code>（holdout 執行前凍結）</p>
+
+<blockquote>
+<p><strong>摘要</strong>　以 100 檔跨資產 ETF（2006–2025，Yahoo Finance）建立月頻、只做多的排名策略：機制是「資金移動緩慢、投資人反應不足」造成 6–12 個月相對強弱延續，並假設高波動期間（動能崩潰）會讓這個效果失效。我們依 ML4T 流程完成一圈：先寫好 <code>setup.yaml</code> 與驗證協定並封存 2024–2025 holdout → 時間點正確的資料管線 → 22 個候選特徵、五道關卡篩選（0 PROCEED／9 REVISE／8 STOP）→ 規則／Ridge／LightGBM 階梯 → 含成本、配置與風控的回測 → 多代理人洩漏稽核 → <strong>只跑一次</strong> holdout。部署模型（LightGBM）在驗證期日 IC 0.078 [0.042, 0.113]、淨 Sharpe 0.63 [−0.02, 1.29]；holdout 日 IC 0.064 [−0.014, 0.142]、淨 Sharpe 1.08 [−0.31, 2.47]，<strong>預先登錄的確認檢定通過，但兩個信賴區間都含 0</strong>，且在 holdout 中 ML 的優勢沒有轉成投組優勢（Sharpe 低於 12-1 規則的 1.35 與 60/40 的 1.39）。Deflated Sharpe（N = 93 次試驗）只有 0.28（驗證）與 0.17（holdout）。結論：訊號方向維持，證據不足以投入資金；下一步是降低轉換損失（換手）而不是再調參數。</p>
+</blockquote>
+<h2>1. 假說與優勢來源（Ch. 1, 6）</h2>
+<p><strong>機制（兩句話）</strong>　資金移動緩慢與投資人反應不足，使跨資產 ETF 過去 6–12 個月的相對表現在下一個月延續；配置者依日曆再平衡、或錨定舊價格的投資人，是交易的對手方。這種延續在波動剛飆升之後最弱，因為崩跌過的輸家會劇烈反彈（momentum crash），所以波動狀態應該能「開關」這個訊號。</p>
+<p><strong>優勢來源（Table 6.1）</strong>　資金流可預測（flow predictability）為主，風險補償（承擔崩潰風險）為輔。採「機制優先」入口，研究範圍因此被限制在價格動能家族與少數狀態變數。</p>
+<p><strong>證偽條件（事先寫入 <code>setup.yaml</code>）</strong>　① 規則基準與部署模型的驗證期 IC 之 Newey-West 95% CI 含 0 → 停止；② 損益兩平成本 &lt; 2 倍假設成本 → 不可交易；③ holdout 淨 Sharpe &lt; 0 或平均 IC ≤ 0 → 未確認；④ 高波動三分位的動能 IC 不低於平靜三分位 → 波動開關機制被否定。</p>
+<div class="wcb"><b>What could break this</b>　ETF 動能的對手方是誰並不像個股那樣清楚；若跨資產動能其實只是「股債輪動 + 美股 beta」，那它是風險暴露而非優勢（第 6 節滾動 beta ≈ 0.90 顯示這個疑慮是真的）。另外，2010 年代後 CTA 與趨勢跟隨 ETF 規模擴大，可能讓延續效果被套利掉。</div>
+
+<h2>2. 交易設定 v1 與驗證協定（Ch. 6）</h2>
+<p>交易設定以 YAML 寫成並在任何回測前 commit（git 第一個 commit <code>73fd93f</code>），以下為摘要；調整參數不換版本，改變機制（例如多空、加入融資成本）即升為 v2。</p>
+<table>
+<thead>
+<tr>
+<th>欄位</th>
+<th>設定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>股票池與資格</td>
+<td>100 檔 ETF（9 類）；在 t 日收盤時：歷史 ≥ 273 交易日，且過去 63 日「未調整收盤價 × 未調整成交量」中位數 ≥ 1,000 萬美元</td>
+</tr>
+<tr>
+<td>決策時程</td>
+<td>月底最後一個交易日收盤產生分數 → 下一交易日<strong>開盤</strong>成交（延遲 1 個交易日），持有至下次再平衡開盤</td>
+</tr>
+<tr>
+<td>可用資訊</td>
+<td>t 日收盤前的調整後 / 未調整 OHLCV；v1 不使用任何非價格資料；最長回看 252 日</td>
+</tr>
+<tr>
+<td>分數→交易</td>
+<td>依分數取前 10 名、等權 10%、只做多、滿倉；無法成交狀態：成交日無有效開盤價則不交易、保留原權重；可用標的不足 10 檔時差額持現金</td>
+</tr>
+<tr>
+<td>限制</td>
+<td>槓桿 1.0、不放空、單檔上限 10%，在模擬迴圈內每次再平衡檢查</td>
+</tr>
+<tr>
+<td>成本類別</td>
+<td>每股 $0.0035 手續費 + 分級半價差（大型 ETF 0.5¢、XL 類股 1¢、其他 2¢），以<strong>未調整開盤價</strong>換算 bps；壓力測試價差 ×3</td>
+</tr>
+</tbody>
+</table>
+<p><strong>驗證協定（六項承諾）</strong>　擴張式訓練窗（自 2007-01-01）；步長 1 年；每年初重訓；標籤期間 21 交易日；label buffer（purge）22 交易日（標籤讀到 open[t+22]）；embargo 0（訓練永遠在驗證之前）；最長特徵回看 252 日。資料切分如下，實際日期記錄於附錄 A2：</p>
+<table>
+<thead>
+<tr>
+<th>用途</th>
+<th>期間</th>
+<th>說明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>特徵篩選（discovery）</td>
+<td>2008-01-01 ～ 2014-11-28</td>
+<td>末端已 purge，標籤不跨入 2015</td>
+</tr>
+<tr>
+<td>超參數調整（固定切分）</td>
+<td>訓練 ≤ 2013-11-27；驗證 2014-01-02 ～ 2014-11-28</td>
+<td>Ridge α 與 LightGBM 只在此調一次後凍結</td>
+</tr>
+<tr>
+<td>Walk-forward 驗證</td>
+<td>2015 ～ 2023，共 9 個年度 fold</td>
+<td>每 fold 重訓，凍結超參數</td>
+</tr>
+<tr>
+<td><strong>Holdout（封存）</strong></td>
+<td><strong>2024-01-01 ～ 2025-12-31</strong></td>
+<td>2026-11-08 封存；程式層級閘門 <code>load_panel_with_holdout</code> 需凍結規格才能開啟，並記錄每次存取</td>
+</tr>
+</tbody>
+</table>
+<p><strong>搜尋記帳</strong>　研究帳本 <code>run_log.csv</code> 在第一次回測前就已 commit（空表頭），採 Strategy → Trial family → Trial → Run 四層；每列記錄 git commit、資料快照雜湊、設定、評估區間、指標與決策。至 holdout 為止共 <strong>93 個試驗</strong>（特徵 21＝17 訊號＋4 狀態、Ridge α 10、Optuna 50、模型 4、策略 / 配置 / 覆蓋 8；帳本中的去重與部署決策紀錄列不計），這個數字直接用於第 7 節的 Deflated Sharpe。<strong>預先登錄的確認檢定</strong>：部署階、等權前 10、假設成本、無覆蓋；holdout 平均日 IC &gt; 0 <strong>且</strong> 淨 Sharpe &gt; 0 即通過，並附 95% CI 與 DSR。</p>
+<div class="wcb"><b>What could break this</b>　固定切分調參只用 2014 一年（約 230 天）選超參數，選到的是那一年的雜訊的風險很高；Ridge α 選在網格邊界（10⁵），代表最佳正則化可能更強。部署規則「顯著勝過最佳較簡單階」的邊際很薄（見第 5 節），而且第一次（有 bug 的）執行與修正後結果不同，這屬於 forking path，已完整揭露於附錄 A3。</div>
+
+<h2>3. 資料：來源、時間點正確性與品質報告（Ch. 2–5）</h2>
+<p><strong>來源（路線 B，自行下載）</strong>　Yahoo Finance via <code>yfinance</code> 1.8.0，下載時間 2026-11-08 15:19 UTC，<code>auto_adjust=False</code> 同時取得收盤價與調整後收盤價。共 470,662 列、100 檔，資料快照 SHA-256 前 12 碼 <code>e85bda8973a2</code>；用 <code>uv run python scripts/download_data.py</code> 即可完整重建（Parquet 長表 <code>data/raw/etf_panel.parquet</code>，另存除權息 / 分割事件表與 metadata）。與課本 ETF 快照獨立比對：99 檔共同標的、4,529 個交易日，日報酬差超過 10bp 的比例為 0，中位差 0.0017bp。</p>
+<p><strong>時間戳記與調整</strong>　日期為 NYSE 交易日，開 / 收盤為官方 09:30 / 16:00 ET。我們發現 Yahoo 的 <code>Close</code> <strong>已經做過分割調整</strong>（SMH 2023-05-05 一拆二當天「原始」報酬是 +2.11%），若直接拿來算每股手續費，分割前的成本會被高估或低估。因此以「分割後價格 × 之後所有分割比例」重建<strong>實際成交價</strong>：修正後 SMH 在除權日的未調整報酬為 −48.9%、調整後 +2.1%，美元成交量不變（已驗證）。報酬一律用調整後價格；所有以美元或股數計價的量（資格門檻、Amihud、成本）一律用重建的未調整價格。</p>
+<p><img src="../results/figures/02_corporate_actions.png" style="width:88%"></p>
+<div class="fig">圖 3.1　Q：價格調整處理正確嗎？左：SMH 分割日未調整（實際成交）vs 調整後；右：SPY 2019 除息日（灰線）使未調整與總報酬序列分離。</div>
+
+<p><strong>時間點正確性檢查（三個層次）</strong></p>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Check</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Values</td>
+<td>Prices only; feature at t uses closes &lt;= t (truncation test in 03)</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td>Values</td>
+<td>Non-price data (fundamentals, macro, text)</td>
+<td>N/A (none used in v1)</td>
+</tr>
+<tr>
+<td>Values</td>
+<td>Adjusted prices are back-adjusted with <em>future</em> dividends; returns are invariant but levels are not -&gt; levels never used in dollars</td>
+<td>PASS (dollar quantities use raw prices)</td>
+</tr>
+<tr>
+<td>Universe</td>
+<td>Eligibility computed from history length and trailing 63d median $ADV at t</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td>Universe</td>
+<td>Leavers included (closed/merged ETFs)</td>
+<td>FAIL - list chosen in 2025; 0 leavers in sample (survivorship bias)</td>
+</tr>
+<tr>
+<td>Identifiers</td>
+<td>Ticker changes / reuse handled with effective dates</td>
+<td>PASS (no ticker changes among the 100 symbols in 2006-2023; tickers checked against listing dates)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>品質報告</strong>　OHLC 不變式違反、非正價格、重複 (symbol, date) 皆為 0；成交量為 0 的列有 158 列（0.038%，以 VLUE、INDA 為主），處理方式是<strong>標記並排除</strong>（價格設為 NaN，不能進入特徵、標籤或成交），不做任何默默往前補值。相對於 NYSE 交易日曆，各檔上市後內部缺漏交易日為 0。樣本內沒有任何一檔下市（存活者偏誤，見 PIT 表的 FAIL）。每月可交易檔數中位數 87（四分位 74–93），2006 年因歷史長度不足為 0，2015 年後穩定在 85 以上（圖 3.2）。v1 沒有使用 tick 資料或合成資料。</p>
+<p><img src="../results/figures/02_coverage.png" style="width:78%"></p>
+<div class="fig">圖 3.2　Q：策略每個月實際能交易幾檔？灰：有價格；藍：符合資格（歷史 ≥ 273 日且 $ADV ≥ 1,000 萬）。</div>
+
+<div class="wcb"><b>What could break this</b>　(1) 存活者偏誤：100 檔名單是 2025 年選的，期間關掉的 ETF（多半是失敗的商品或主題型基金）不在樣本中。這主要高估等權基準；對動能多頭部位的影響方向較小（輸家本來就不太會被選中），但仍是向上偏誤。(2) Yahoo 的調整後價格會隨未來配息回溯修改，比率型特徵不受影響，但重新下載時調整因子會變，README 已註明。(3) 半價差是依經驗分級，不是實際報價。</div>
+
+<h2>4. 標籤、特徵與篩選（Ch. 7–10）</h2>
+<table>
+<thead>
+<tr>
+<th>item</th>
+<th>value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>label</td>
+<td>fwd_open_ret_21d</td>
+</tr>
+<tr>
+<td>type</td>
+<td>fixed-horizon continuous return</td>
+</tr>
+<tr>
+<td>execution anchor</td>
+<td>fill at open t+1, exit at open t+22</td>
+</tr>
+<tr>
+<td>horizon</td>
+<td>21 sessions</td>
+</tr>
+<tr>
+<td>mean</td>
+<td>close-close - open-open</td>
+</tr>
+<tr>
+<td>IC(mom_252_21) close-to-close label</td>
+<td>0.0582</td>
+</tr>
+<tr>
+<td>IC(mom_252_21) next-open label</td>
+<td>0.0569</td>
+</tr>
+<tr>
+<td>nominal obs (dev)</td>
+<td>352,620</td>
+</tr>
+<tr>
+<td>effective obs ~ nominal / horizon</td>
+<td>16,791</td>
+</tr>
+<tr>
+<td>effective IC days (Bartlett, discovery)</td>
+<td>86</td>
+</tr>
+</tbody>
+</table>
+<p><strong>標籤</strong>　<code>fwd_open_ret_21d = open[t+22] / open[t+1] − 1</code>，固定期間連續報酬，錨定「t+1 開盤成交、下次再平衡開盤出場」的回測規則。同一筆觀測下，收盤對收盤與開盤對開盤標籤的平均絕對差是 <strong>85bp</strong>，所以兩者不能混用。訓練目標為逐日橫斷面去均值後的報酬，並以訓練 fold 估計的 1%／99% 分位做 winsorize。重疊造成名目觀測 352,620 筆，有效樣本約 16,791（÷ 21）；discovery 期 IC 序列的 Bartlett 有效天數只有 <strong>86 天</strong>，所以所有 IC 信賴區間都用 Newey-West（lag 21）。</p>
+<p><strong>特徵表（Table 8.1 格式，每個候選一列）</strong>　22 個候選：17 個訊號（每個都有可命名的機制與預期方向）與 5 個狀態變數；回看期 ≤ 252 日，每日計算、月頻使用。</p>
+<table>
+<thead>
+<tr>
+<th>feature</th>
+<th>role</th>
+<th>driver hypothesis</th>
+<th>lookback</th>
+<th>representation</th>
+<th>known failure mode</th>
+<th>sign</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mom_252_21</td>
+<td>signal</td>
+<td>Persistence: under-reaction / slow-moving capital (12-1 momentum)</td>
+<td>252</td>
+<td>return, XS rank</td>
+<td>momentum crashes after volatility spikes</td>
+<td>+</td>
+</tr>
+<tr>
+<td>mom_126_21</td>
+<td>signal</td>
+<td>Persistence at 6-1 months</td>
+<td>126</td>
+<td>return, XS rank</td>
+<td>regime concentration in one asset class</td>
+<td>+</td>
+</tr>
+<tr>
+<td>mom_63</td>
+<td>signal</td>
+<td>Persistence at 3 months (faster trend)</td>
+<td>63</td>
+<td>return, XS rank</td>
+<td>whipsaw in range-bound markets</td>
+<td>+</td>
+</tr>
+<tr>
+<td>volscaled_mom_252_21</td>
+<td>signal</td>
+<td>Persistence per unit risk (TS-momentum scaling)</td>
+<td>252</td>
+<td>return / vol, XS rank</td>
+<td>low-vol bond ETFs dominate the ranking</td>
+<td>+</td>
+</tr>
+<tr>
+<td>sharpe_126</td>
+<td>signal</td>
+<td>Trend earned with less dispersion repeats</td>
+<td>126</td>
+<td>mean/std of log returns, XS rank</td>
+<td>unbounded when vol -&gt; 0</td>
+<td>+</td>
+</tr>
+<tr>
+<td>dist_52w_high</td>
+<td>signal</td>
+<td>Anchoring on the 52-week high delays reaction to news</td>
+<td>252</td>
+<td>close / 252d max - 1, XS rank</td>
+<td>piles up at 0 in sustained bull runs</td>
+<td>+</td>
+</tr>
+<tr>
+<td>sma_ratio_200</td>
+<td>signal</td>
+<td>Trend-following: price above its 200d average</td>
+<td>200</td>
+<td>close / SMA200 - 1, XS rank</td>
+<td>lags turning points by months</td>
+<td>+</td>
+</tr>
+<tr>
+<td>trend_consistency_63</td>
+<td>signal</td>
+<td>Frog-in-the-pan: gradual information diffuses slowly</td>
+<td>63</td>
+<td>share of up sessions, XS rank</td>
+<td>noisy for low-vol funds</td>
+<td>+</td>
+</tr>
+<tr>
+<td>mom_accel</td>
+<td>signal</td>
+<td>Trend acceleration: recent leg vs older leg</td>
+<td>126</td>
+<td>mom_63 - (mom_126_21 - mom_63), XS rank</td>
+<td>flags reversals as acceleration</td>
+<td>+</td>
+</tr>
+<tr>
+<td>rev_21</td>
+<td>signal</td>
+<td>Short-term reversal: liquidity provision to 1-month flow pressure</td>
+<td>21</td>
+<td>return, XS rank</td>
+<td>ETF reversal weaker than single stocks</td>
+<td>−</td>
+</tr>
+<tr>
+<td>rev_5</td>
+<td>signal</td>
+<td>Weekly reversal: liquidity provision</td>
+<td>5</td>
+<td>return, XS rank</td>
+<td>dominated by noise at monthly horizon</td>
+<td>−</td>
+</tr>
+<tr>
+<td>vol_63</td>
+<td>signal</td>
+<td>Low-risk anomaly: leverage-constrained investors overpay for risk</td>
+<td>63</td>
+<td>annualised std, XS rank</td>
+<td>mixes asset classes with structurally different vol</td>
+<td>−</td>
+</tr>
+<tr>
+<td>beta_spy_126</td>
+<td>signal</td>
+<td>Betting-against-beta: funding constraints</td>
+<td>126</td>
+<td>OLS beta to SPY, XS rank</td>
+<td>beta unstable across regimes</td>
+<td>−</td>
+</tr>
+<tr>
+<td>max_ret_21</td>
+<td>signal</td>
+<td>Lottery demand: investors overpay for extreme upside</td>
+<td>21</td>
+<td>max daily return, XS rank</td>
+<td>driven by single events</td>
+<td>−</td>
+</tr>
+<tr>
+<td>skew_63</td>
+<td>signal</td>
+<td>Skewness preference: positively skewed assets overpriced</td>
+<td>63</td>
+<td>sample skewness, XS rank</td>
+<td>estimation noise in 63 obs</td>
+<td>−</td>
+</tr>
+<tr>
+<td>amihud_63</td>
+<td>signal</td>
+<td>Illiquidity premium: compensation for price impact</td>
+<td>63</td>
+<td>mean</td>
+<td>r</td>
+<td>/ $volume, XS rank</td>
+</tr>
+<tr>
+<td>volume_trend_21_126</td>
+<td>signal</td>
+<td>Attention: rising participation confirms the move</td>
+<td>126</td>
+<td>log(ADV21/ADV126), XS rank</td>
+<td>index events and rebalancing days</td>
+<td>+</td>
+</tr>
+<tr>
+<td>asset_rvol_pct</td>
+<td>state</td>
+<td>Own volatility vs own history: stress state of the asset</td>
+<td>252</td>
+<td>percentile of vol_21 in own 252d</td>
+<td>single shock dominates</td>
+<td>(state)</td>
+</tr>
+<tr>
+<td>mkt_rvol_pct</td>
+<td>state</td>
+<td>Market risk environment (SPY 21d vol vs expanding history)</td>
+<td>252</td>
+<td>expanding percentile</td>
+<td>level shifts in vol regime</td>
+<td>(state)</td>
+</tr>
+<tr>
+<td>mkt_trend</td>
+<td>state</td>
+<td>Market trend state (SPY vs SMA200)</td>
+<td>200</td>
+<td>ratio</td>
+<td>late at turning points</td>
+<td>(state)</td>
+</tr>
+<tr>
+<td>corr_spy_tlt_63</td>
+<td>state</td>
+<td>Hedge regime: stock-bond correlation</td>
+<td>63</td>
+<td>level</td>
+<td>nonsynchronous trading, one pair stands for all</td>
+<td>(state)</td>
+</tr>
+<tr>
+<td>xs_disp_21</td>
+<td>state</td>
+<td>Opportunity set: cross-sectional dispersion of 1-month returns</td>
+<td>21</td>
+<td>XS std</td>
+<td>dominated by commodity outliers</td>
+<td>(state)</td>
+</tr>
+</tbody>
+</table>
+<p>所有訊號在每個決策日對<strong>當日符合資格</strong>的標的做橫斷面百分位排名。相關性分群（|ρ| ≥ 0.8，依特徵表順序挑代表，<strong>不看 IC</strong>）刪去 2 個重複：<code>volscaled_mom_252_21</code>（＝<code>mom_252_21</code>）、<code>max_ret_21</code>（＝<code>vol_63</code>）。</p>
+<p><strong>關卡 1a：截斷測試</strong>　隨機抽 6 個日期，把資料截在 t 重新計算所有特徵，在 t 的值與全樣本計算<strong>完全相同</strong>，所以沒有未來資訊。之後的獨立稽核又用 12 個月底日期，對完整 panel（含排名與市場層級狀態變數）重做一次，同樣全部通過。</p>
+<p><strong>五道關卡篩選（discovery 2008-01 ～ 2014-11，結果 0 PROCEED／9 REVISE／8 STOP）</strong></p>
+<table>
+<thead>
+<tr>
+<th>feature</th>
+<th>expected_sign</th>
+<th>ic_mean</th>
+<th>ic_lo</th>
+<th>ic_hi</th>
+<th>same_sign_years</th>
+<th>placebo_ic_lag21</th>
+<th>quintile_monotonicity</th>
+<th>q5_q1_spread_bp_month</th>
+<th>cost_bp_month</th>
+<th>bh_sig</th>
+<th>decision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mom_252_21</td>
+<td>1</td>
+<td>0.057</td>
+<td>-0.011</td>
+<td>0.125</td>
+<td>0.714</td>
+<td>0.045</td>
+<td>1</td>
+<td>42</td>
+<td>4</td>
+<td>False</td>
+<td>REVISE</td>
+</tr>
+<tr>
+<td>mom_126_21</td>
+<td>1</td>
+<td>0.026</td>
+<td>-0.037</td>
+<td>0.089</td>
+<td>0.714</td>
+<td>0.001</td>
+<td>0.7</td>
+<td>42</td>
+<td>6</td>
+<td>False</td>
+<td>REVISE</td>
+</tr>
+<tr>
+<td>mom_63</td>
+<td>1</td>
+<td>0.059</td>
+<td>0.005</td>
+<td>0.113</td>
+<td>0.857</td>
+<td>0.034</td>
+<td>0.8</td>
+<td>78</td>
+<td>8</td>
+<td>False</td>
+<td>REVISE</td>
+</tr>
+<tr>
+<td>volscaled_mom_252_21</td>
+<td>1</td>
+<td>0.047</td>
+<td>-0.011</td>
+<td>0.105</td>
+<td>0.714</td>
+<td>0.036</td>
+<td>0.4</td>
+<td>51</td>
+<td>4</td>
+<td>False</td>
+<td>STOP</td>
+</tr>
+<tr>
+<td>sharpe_126</td>
+<td>1</td>
+<td>0.021</td>
+<td>-0.034</td>
+<td>0.076</td>
+<td>0.714</td>
+<td>0.008</td>
+<td>0.7</td>
+<td>28</td>
+<td>6</td>
+<td>False</td>
+<td>REVISE</td>
+</tr>
+<tr>
+<td>dist_52w_high</td>
+<td>1</td>
+<td>0.012</td>
+<td>-0.05</td>
+<td>0.074</td>
+<td>0.429</td>
+<td>0.011</td>
+<td>0.9</td>
+<td>39</td>
+<td>8</td>
+<td>False</td>
+<td>STOP</td>
+</tr>
+<tr>
+<td>sma_ratio_200</td>
+<td>1</td>
+<td>0.043</td>
+<td>-0.017</td>
+<td>0.103</td>
+<td>0.714</td>
+<td>0.04</td>
+<td>0.9</td>
+<td>55</td>
+<td>6</td>
+<td>False</td>
+<td>REVISE</td>
+</tr>
+<tr>
+<td>trend_consistency_63</td>
+<td>1</td>
+<td>0.055</td>
+<td>0.012</td>
+<td>0.097</td>
+<td>0.857</td>
+<td>0.043</td>
+<td>0.9</td>
+<td>65</td>
+<td>8</td>
+<td>False</td>
+<td>REVISE</td>
+</tr>
+<tr>
+<td>mom_accel</td>
+<td>1</td>
+<td>0.032</td>
+<td>-0.025</td>
+<td>0.089</td>
+<td>0.857</td>
+<td>0.039</td>
+<td>0.9</td>
+<td>61</td>
+<td>10</td>
+<td>False</td>
+<td>REVISE</td>
+</tr>
+<tr>
+<td>rev_21</td>
+<td>-1</td>
+<td>0.023</td>
+<td>-0.025</td>
+<td>0.071</td>
+<td>0.286</td>
+<td>0.018</td>
+<td>-0.6</td>
+<td>-51</td>
+<td>14</td>
+<td>False</td>
+<td>STOP</td>
+</tr>
+<tr>
+<td>rev_5</td>
+<td>-1</td>
+<td>0</td>
+<td>-0.032</td>
+<td>0.032</td>
+<td>0.429</td>
+<td>0.03</td>
+<td>1</td>
+<td>83</td>
+<td>14</td>
+<td>False</td>
+<td>STOP</td>
+</tr>
+<tr>
+<td>vol_63</td>
+<td>-1</td>
+<td>0.05</td>
+<td>-0.02</td>
+<td>0.12</td>
+<td>0.286</td>
+<td>0.052</td>
+<td>-0.3</td>
+<td>-12</td>
+<td>2</td>
+<td>False</td>
+<td>STOP</td>
+</tr>
+<tr>
+<td>beta_spy_126</td>
+<td>-1</td>
+<td>0.102</td>
+<td>0.023</td>
+<td>0.181</td>
+<td>0.286</td>
+<td>0.101</td>
+<td>-1</td>
+<td>-81</td>
+<td>1</td>
+<td>False</td>
+<td>STOP</td>
+</tr>
+<tr>
+<td>max_ret_21</td>
+<td>-1</td>
+<td>0.056</td>
+<td>-0.008</td>
+<td>0.121</td>
+<td>0.286</td>
+<td>0.05</td>
+<td>-0.6</td>
+<td>-20</td>
+<td>4</td>
+<td>False</td>
+<td>STOP</td>
+</tr>
+<tr>
+<td>skew_63</td>
+<td>-1</td>
+<td>-0.024</td>
+<td>-0.063</td>
+<td>0.015</td>
+<td>0.571</td>
+<td>-0.024</td>
+<td>0.7</td>
+<td>28</td>
+<td>9</td>
+<td>False</td>
+<td>REVISE</td>
+</tr>
+<tr>
+<td>amihud_63</td>
+<td>1</td>
+<td>0.026</td>
+<td>0.005</td>
+<td>0.048</td>
+<td>0.857</td>
+<td>0.026</td>
+<td>0.5</td>
+<td>37</td>
+<td>2</td>
+<td>False</td>
+<td>REVISE</td>
+</tr>
+<tr>
+<td>volume_trend_21_126</td>
+<td>1</td>
+<td>-0.001</td>
+<td>-0.034</td>
+<td>0.031</td>
+<td>0.429</td>
+<td>-0.03</td>
+<td>0.3</td>
+<td>18</td>
+<td>10</td>
+<td>False</td>
+<td>STOP</td>
+</tr>
+</tbody>
+</table>
+<p>讀法：IC 為日 Spearman IC 平均與 NW 95% CI；<code>same_sign_years</code> 為 7 個年度區塊中方向符合機制的比例；<code>placebo_ic_lag21</code> 為特徵延後 21 日的 IC（若仍存活代表是「慢速狀態代理」而非即時資訊）；單調性為五分位平均標籤的 Spearman（≥ 0.9 視為單調，0.9 的列實際值略低於 0.9）；價差與成本皆為每月 bp、以預期方向計算（成本 = 前五分位換手 × 2 倍來回成本）。<strong>Benjamini–Hochberg（α = 0.05，17 個訊號）沒有任何特徵顯著</strong>，這是沒有 PROCEED 的主因。</p>
+<p><strong>值得記下的 STOP</strong>　<code>beta_spy_126</code> 的 IC = 0.102 [0.023, 0.181] 是全表最強且顯著，但方向與「betting-against-beta」機制<strong>相反</strong>；看了資料才把方向反過來，就等於一個新假說，所以在 v1 一律 STOP，並列為下一版的候選。短期反轉（<code>rev_21</code>、<code>rev_5</code>）在 ETF 上也不成立。</p>
+<p><strong>狀態變數與機制檢驗（證偽條件 ④，discovery）</strong>　以擴張式、時間點正確的三分位門檻，計算 12-1 動能 IC 在 SPY 波動三分位下的表現：低 0.091、中 −0.030、高 0.084。高波動並沒有比較差，<strong>在 discovery 期間，機制的「波動開關」部分未獲支持</strong>（但高波動只有 151 天，CI 很寬）。在驗證期這個結果反轉了（第 5、6 節）。</p>
+<p><strong>前三名特徵的機制合理性（DAG + 四項檢查）</strong>　圖 4.1 為 <code>trend_consistency_63</code>、<code>amihud_63</code>、<code>mom_63</code> 的 DAG：控制市場 beta／資產類別與波動狀態（干擾因子）；資金流是中介變數（不控制）；基金規模與存活是碰撞變數（絕不控制，否則會造成偽相關）。</p>
+<table>
+<thead>
+<tr>
+<th>feature</th>
+<th>ic</th>
+<th>placebo_lag5</th>
+<th>placebo_lag21</th>
+<th>ic_after_beta_group_control</th>
+<th>ic_calm</th>
+<th>ic_mid</th>
+<th>ic_stressed</th>
+<th>event_time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>trend_consistency_63</td>
+<td>0.055</td>
+<td>0.054</td>
+<td>0.043</td>
+<td>0.025</td>
+<td>0.053</td>
+<td>0.069</td>
+<td>0.044</td>
+<td>N/A (not event-based)</td>
+</tr>
+<tr>
+<td>amihud_63</td>
+<td>0.026</td>
+<td>0.026</td>
+<td>0.026</td>
+<td>0.03</td>
+<td>0.012</td>
+<td>0.07</td>
+<td>-0.005</td>
+<td>N/A (not event-based)</td>
+</tr>
+<tr>
+<td>mom_63</td>
+<td>0.059</td>
+<td>0.058</td>
+<td>0.034</td>
+<td>0.009</td>
+<td>0.073</td>
+<td>0.049</td>
+<td>0.007</td>
+<td>N/A (not event-based)</td>
+</tr>
+</tbody>
+</table>
+<p><code>mom_63</code> 在控制 beta 與資產類別後，IC 從 0.059 掉到 0.009，代表它多半是在挑「哪一類資產」而不是挑個別 ETF；<code>amihud_63</code> 在控制後仍存活，但在高波動時消失。三者都不是事件型特徵，事件時間對齊不適用。</p>
+<p><img src="../results/figures/03_feature_corr.png" style="width:62%"></p>
+<div class="fig">圖 4.0　Q：哪些候選訊號其實是同一個賭注？discovery 期 Spearman 相關矩陣（|ρ| ≥ 0.8 者刪除）。</div>
+
+<p><img src="../results/figures/03_dags.png" style="width:100%"></p>
+<div class="fig">圖 4.1　Q：前三名特徵各自要控制什麼、不能控制什麼？紅：干擾因子（控制）；紫：中介變數（不控制）；黃：碰撞變數（絕不控制）。</div>
+
+<div class="wcb"><b>What could break this</b>　Discovery 只有 7 年、86 個有效 IC 天，五道關卡的檢定力很低，REVISE 的特徵進入模型其實是「寬鬆放行」；如果標準提高到只收 PROCEED，模型就沒有任何訊號特徵可用。安慰劑測試顯示，大部分動能類特徵都是慢速狀態代理，這在月頻策略中可以接受，但也表示它們和 beta / 資產類別輪動高度重疊。</div>
+
+<h2>5. 模型、驗證、解讀與不確定性（Ch. 11–15）</h2>
+<p><strong>基準階梯</strong>　① 規則：依 <code>mom_252_21</code> 排名（不擬合）；② Ridge：9 個 REVISE 訊號＋各自與市場波動狀態的交互作用，標準化只在訓練 fold 上 fit；α 在 10⁻⁴～10⁵（10 個值、9 個數量級）中依 2014 年 IC 選出 <strong>10⁵</strong>（網格邊界；與課本圖 11.1「ICIR 高峰出現在很大的 α」一致）；③ LightGBM：MAE（L1）損失、淺樹，Optuna TPE 50 次試驗，在 2014 年提早停止後凍結（num_leaves 12、max_depth 3、學習率 0.0116、min_child_samples 562、295 輪）；⑤ 集成：前三者逐日 z 分數平均。訓練列每 5 個交易日取 1 天，以降低標籤重疊。</p>
+<p><strong>驗證期（2015–2023，9 fold）的共同尺度：日 Spearman IC 與 NW 95% CI</strong></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>IC</th>
+<th>CI_lo</th>
+<th>CI_hi</th>
+<th>p</th>
+<th>ICIR(daily)</th>
+<th>share_pos_folds</th>
+<th>n_eff_days</th>
+<th>days</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rule</td>
+<td>0.019</td>
+<td>-0.029</td>
+<td>0.066</td>
+<td>0.439</td>
+<td>0.058</td>
+<td>0.667</td>
+<td>128</td>
+<td>2,242</td>
+</tr>
+<tr>
+<td>ridge</td>
+<td>0.045</td>
+<td>0.005</td>
+<td>0.085</td>
+<td>0.026</td>
+<td>0.159</td>
+<td>0.778</td>
+<td>142</td>
+<td>2,242</td>
+</tr>
+<tr>
+<td>lgbm</td>
+<td>0.078</td>
+<td>0.042</td>
+<td>0.113</td>
+<td>0</td>
+<td>0.3</td>
+<td>0.778</td>
+<td>147</td>
+<td>2,242</td>
+</tr>
+<tr>
+<td>ensemble</td>
+<td>0.06</td>
+<td>0.02</td>
+<td>0.101</td>
+<td>0.004</td>
+<td>0.21</td>
+<td>0.667</td>
+<td>137</td>
+<td>2,242</td>
+</tr>
+</tbody>
+</table>
+<p><img src="../results/figures/04_ic_per_fold.png" style="width:86%"></p>
+<div class="fig">圖 5.1　Q：訊號每個 fold 都穩定嗎？各 fold 平均日 IC 與 NW 95% 區間；2016、2018、2023 規則為負，LightGBM 在 2016／2018 損失較小。</div>
+
+<p><strong>成對比較（日 IC 差，NW 95% CI）與部署決策</strong></p>
+<table>
+<thead>
+<tr>
+<th>comparison</th>
+<th>dIC</th>
+<th>lo</th>
+<th>hi</th>
+<th>p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ridge - rule</td>
+<td>0.026</td>
+<td>-0.02</td>
+<td>0.072</td>
+<td>0.265</td>
+</tr>
+<tr>
+<td>lgbm - ridge</td>
+<td>0.033</td>
+<td>0.003</td>
+<td>0.063</td>
+<td>0.033</td>
+</tr>
+<tr>
+<td>lgbm - rule</td>
+<td>0.059</td>
+<td>0.011</td>
+<td>0.107</td>
+<td>0.016</td>
+</tr>
+<tr>
+<td>ensemble - rule</td>
+<td>0.042</td>
+<td>0.008</td>
+<td>0.075</td>
+<td>0.014</td>
+</tr>
+<tr>
+<td>ensemble - ridge</td>
+<td>0.015</td>
+<td>-0.005</td>
+<td>0.036</td>
+<td>0.146</td>
+</tr>
+<tr>
+<td>ensemble - lgbm</td>
+<td>-0.017</td>
+<td>-0.042</td>
+<td>0.007</td>
+<td>0.171</td>
+</tr>
+</tbody>
+</table>
+<p>依事先登錄的規則（部署最複雜、且相對「最佳較簡單階」成對差 CI 下界 &gt; 0 的那一階）：集成 vs LightGBM 下界 −0.042，不成立；<strong>LightGBM vs Ridge 下界 +0.0026 → 部署 LightGBM</strong>。這個邊際很薄，而且必須說明：稽核前的程式誤把比較對象寫成「最後一個通過的階」（規則），稽核後才改成合約文字的「最佳較簡單階」。同時修正了調參窗口的 purge，LightGBM 重新調參後，下界才從 −0.0015 變成 +0.0026（附錄 A3）。</p>
+<p><strong>SHAP（描述性，非因果）</strong>　前幾大是 <code>mkt_rvol_pct</code>、<code>mom_252_21</code>、<code>sharpe_126</code>。方向檢查：<code>mom_252_21</code>、<code>mom_63</code>、<code>sma_ratio_200</code> 的 SHAP 與特徵值正相關（符合延續機制，9 個 fold 中分別有 9／9／8 個方向一致）。<strong>出乎意料的歸因</strong>：<code>sharpe_126</code> 的 SHAP 與特徵值<strong>負</strong>相關（−0.61，9 個 fold 全部一致），和「風險調整後動能」的機制相反。我們的解讀是：在已經有原始動能的情況下，高 Sharpe 往往代表低波動的債券型 ETF，模型其實是在用它降低債券權重，換句話說是資產類別效果，而不是動能本身。<code>mkt_rvol_pct</code> 是每天所有標的都相同的值，它的 SHAP 大多只是整天的水準移動，對橫斷面排名沒有影響，只有透過交互作用才有用。各 fold 重要性排名的平均 Spearman 為 0.53，屬於中度穩定。</p>
+<p><img src="../results/figures/04_shap_beeswarm.png" style="width:66%"></p>
+<div class="fig">圖 5.2　Q：LightGBM 依賴哪些輸入、方向為何？9 個驗證 fold 合併的 SHAP beeswarm。</div>
+
+<p><strong>Conformal 預測區間</strong>　以每個 fold 訓練窗的最後 252 日為校準集（與核心訓練集之間再 purge 22 日）。80% 區間的實際覆蓋率在 2015（0.75）、2018（0.72）、2020（0.63）、2022（0.71）<strong>低於 80%</strong>，90% 區間在 2020 年只有 0.76。這四年都是波動突增的年份，和「校準過時」的預期一致。Ridge 與 LightGBM 的覆蓋率幾乎相同。</p>
+<div class="wcb"><b>What could break this</b>　(1) LightGBM 勝過 Ridge 的證據只有一個邊際顯著的成對差，而且做了 50 次 Optuna 試驗。(2) 超參數只用 2014 年選出。(3) SHAP 顯示模型很大一部分是在做「資產類別擇時」，這在 holdout 可能表現為 portfolio-translation drift（第 7 節證實）。(4) 驗證與 holdout 是否一致的診斷留到第 7 節。</div>
+
+<h2>6. 回測協定、基準、投組、成本與風險（Ch. 16–19）</h2>
+<p><strong>協定（事前固定）</strong>　訊號時點：t 日收盤 → t+1 <strong>開盤</strong>成交（同根 K 棒成交視為 lookahead）；報酬以開盤對開盤累計，所以成交價就是標籤的進場價。再平衡為月頻，持有到下次再平衡開盤。部位：前 10 名等權、單檔上限 10%。成交：以開盤價成交，該日沒有有效價格則不交易。限制：只做多、滿倉、槓桿 ≤ 1，在模擬迴圈內檢查；若因某檔無法成交而保留舊權重，會同比例縮小其他標的，確保總曝險 ≤ 1。成本：見第 2 節，按標的、按日、以未調整開盤價換算。<strong>引擎</strong>：自寫的逐日事件迴圈（權重每日漂移）。不用純向量化，是因為波動目標覆蓋與無法成交規則會影響下一步動作。我們用合成資料（3 檔、60 天、已知價格）由稽核代理人驗證過報酬與成本計算。</p>
+<p><strong>驗證期績效（2015-01 ～ 2023-12，相同協定，扣成本）</strong></p>
+<table>
+<thead>
+<tr>
+<th>strategy</th>
+<th>gross_sharpe</th>
+<th>net_sharpe</th>
+<th>net_sr_lo</th>
+<th>net_sr_hi</th>
+<th>net_cagr</th>
+<th>vol</th>
+<th>max_dd</th>
+<th>turnover_2way_ann</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>deployed_lgbm</td>
+<td>0.678</td>
+<td>0.634</td>
+<td>-0.02</td>
+<td>1.289</td>
+<td>0.097</td>
+<td>0.169</td>
+<td>-0.299</td>
+<td>16.674</td>
+</tr>
+<tr>
+<td>rule_mom_252_21</td>
+<td>0.478</td>
+<td>0.461</td>
+<td>-0.194</td>
+<td>1.115</td>
+<td>0.071</td>
+<td>0.189</td>
+<td>-0.295</td>
+<td>7.168</td>
+</tr>
+<tr>
+<td>ridge</td>
+<td>0.515</td>
+<td>0.48</td>
+<td>-0.175</td>
+<td>1.134</td>
+<td>0.076</td>
+<td>0.192</td>
+<td>-0.408</td>
+<td>12.367</td>
+</tr>
+<tr>
+<td>ensemble</td>
+<td>0.644</td>
+<td>0.609</td>
+<td>-0.046</td>
+<td>1.263</td>
+<td>0.098</td>
+<td>0.18</td>
+<td>-0.328</td>
+<td>12.75</td>
+</tr>
+<tr>
+<td>EW_all_eligible</td>
+<td>0.547</td>
+<td>0.544</td>
+<td>-0.11</td>
+<td>1.199</td>
+<td>0.068</td>
+<td>0.138</td>
+<td>-0.301</td>
+<td>0.561</td>
+</tr>
+<tr>
+<td>60/40 SPY/AGG</td>
+<td>0.764</td>
+<td>0.764</td>
+<td>0.109</td>
+<td>1.418</td>
+<td>0.078</td>
+<td>0.106</td>
+<td>-0.221</td>
+<td>0.313</td>
+</tr>
+<tr>
+<td>SPY</td>
+<td>0.733</td>
+<td>0.733</td>
+<td>0.079</td>
+<td>1.387</td>
+<td>0.118</td>
+<td>0.172</td>
+<td>-0.32</td>
+<td>0.111</td>
+</tr>
+</tbody>
+</table>
+<p>部署模型勝過非 ML 規則（0.46）與全體等權（0.54），但<strong>輸給 60/40（0.76）與 SPY（0.73）</strong>。課本的 ETF 基準（Sharpe 0.65 vs 60/40 的 0.80）也有同樣不討好的結果。</p>
+<p><strong>成本敏感度</strong>　假設成本中位數每腿 3.4bp。損益兩平成本 c* = 年化毛報酬 ÷ 年化雙邊換手：部署模型 <strong>69bp/腿</strong>（相對等權基準 24bp），規則 126bp/腿，屬於「舒適區」。成本放大到 4 倍時淨 Sharpe 仍有 0.50，8 倍時 0.33。換手偏高：年化雙邊 16.7 倍，平均持有約 1.4 個月；規則只有 7.2 倍。</p>
+<p><img src="../results/figures/05_cost_sweep.png" style="width:86%"></p>
+<div class="fig">圖 6.1　Q：部署策略能承受多少成本？左：淨 Sharpe 對每腿成本（虛線＝假設成本）；右：淨 CAGR 與損益兩平。</div>
+
+<p><strong>投組配置（相同訊號、相同 63 日共變異窗）</strong>　前 10 名搭配 10% 上限時，任何滿倉配置都會退化成等權，因此改用前 20 名候選集做對照比較：</p>
+<table>
+<thead>
+<tr>
+<th>allocator</th>
+<th>net_sharpe</th>
+<th>max_dd</th>
+<th>turnover_2way_ann</th>
+<th>HHI</th>
+<th>effective_bets</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>equal_weight (top-20)</td>
+<td>0.577</td>
+<td>-0.342</td>
+<td>13.038</td>
+<td>0.05</td>
+<td>20</td>
+</tr>
+<tr>
+<td>inverse_vol (top-20)</td>
+<td>0.612</td>
+<td>-0.333</td>
+<td>13.699</td>
+<td>0.055</td>
+<td>18.333</td>
+</tr>
+<tr>
+<td>hrp (top-20)</td>
+<td>0.599</td>
+<td>-0.343</td>
+<td>15.459</td>
+<td>0.064</td>
+<td>15.681</td>
+</tr>
+<tr>
+<td>best-worst spread</td>
+<td>0.035</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>最佳與最差的差距只有 0.035 Sharpe，比不同訊號之間的差距小一個數量級，與課本中位數 0.49「配置救不了弱訊號」的結論一致；這裡沒有使用 mean-variance，所以不需要 Ledoit-Wolf。</p>
+<p><strong>風險控制矩陣（Table 19.2 精簡版）</strong></p>
+<table>
+<thead>
+<tr>
+<th>風險</th>
+<th>代理指標</th>
+<th>控制</th>
+<th>頻率</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>市場</td>
+<td>對 SPY 的滾動 252 日 beta（平均 0.90，HAC 區間 0.81–0.99）</td>
+<td>波動目標覆蓋；停損階梯</td>
+<td>每日監看、每月行動</td>
+</tr>
+<tr>
+<td>因子 / 集中</td>
+<td>資產類別權重、HHI、有效標的數</td>
+<td>單檔 ≤ 10%；前 10 名</td>
+<td>每次再平衡</td>
+</tr>
+<tr>
+<td>槓桿</td>
+<td>總曝險</td>
+<td>≤ 1.0，在模擬內檢查</td>
+<td>每次再平衡</td>
+</tr>
+<tr>
+<td>流動性</td>
+<td>63 日美元成交量中位數</td>
+<td>資格門檻 ≥ $10M；成交日缺價不交易</td>
+<td>每月</td>
+</tr>
+<tr>
+<td>模型</td>
+<td>滾動 63 日 IC、PSI、conformal 覆蓋率</td>
+<td>重訓 / 暫停規則（第 8 節）</td>
+<td>每月</td>
+</tr>
+<tr>
+<td>作業</td>
+<td>資料快照雜湊、holdout 存取紀錄、規格雜湊</td>
+<td>程式閘門與 git</td>
+<td>每次執行</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>VaR95</th>
+<th>CVaR95</th>
+<th>days</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>all</td>
+<td>0.016</td>
+<td>0.025</td>
+<td>2,263</td>
+</tr>
+<tr>
+<td>high vol</td>
+<td>0.02</td>
+<td>0.031</td>
+<td>1,051</td>
+</tr>
+<tr>
+<td>low vol</td>
+<td>0.012</td>
+<td>0.019</td>
+<td>1,212</td>
+</tr>
+</tbody>
+</table>
+<p><strong>尾端與路徑風險</strong>　每日歷史 VaR95 為 1.62%，CVaR95 為 2.55%；高波動狀態下分別是 2.03% 與 3.08%，低波動狀態下 1.20% 與 1.90%。最大回撤 −29.9%：2020-02-14 到 2020-03-23 共 26 個交易日，114 個交易日後（2020-09-02）才回到前高。</p>
+<p><strong>壓力測試（價差 × 3，只放大價差、不放大手續費）</strong></p>
+<table>
+<thead>
+<tr>
+<th>episode</th>
+<th>strategy</th>
+<th>return</th>
+<th>max_dd</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>covid_2020</td>
+<td>deployed (3x spreads)</td>
+<td>-0.153</td>
+<td>-0.299</td>
+</tr>
+<tr>
+<td>covid_2020</td>
+<td>deployed + overlay (3x spreads)</td>
+<td>-0.148</td>
+<td>-0.204</td>
+</tr>
+<tr>
+<td>covid_2020</td>
+<td>rule (3x spreads)</td>
+<td>-0.098</td>
+<td>-0.295</td>
+</tr>
+<tr>
+<td>covid_2020</td>
+<td>60/40</td>
+<td>-0.061</td>
+<td>-0.214</td>
+</tr>
+<tr>
+<td>covid_2020</td>
+<td>SPY</td>
+<td>-0.128</td>
+<td>-0.321</td>
+</tr>
+<tr>
+<td>rate_shock_2022</td>
+<td>deployed (3x spreads)</td>
+<td>-0.099</td>
+<td>-0.186</td>
+</tr>
+<tr>
+<td>rate_shock_2022</td>
+<td>deployed + overlay (3x spreads)</td>
+<td>-0.057</td>
+<td>-0.102</td>
+</tr>
+<tr>
+<td>rate_shock_2022</td>
+<td>rule (3x spreads)</td>
+<td>0.097</td>
+<td>-0.197</td>
+</tr>
+<tr>
+<td>rate_shock_2022</td>
+<td>60/40</td>
+<td>-0.165</td>
+<td>-0.219</td>
+</tr>
+<tr>
+<td>rate_shock_2022</td>
+<td>SPY</td>
+<td>-0.178</td>
+<td>-0.263</td>
+</tr>
+</tbody>
+</table>
+<p>COVID 期間部署模型（−15.3%）比規則（−9.8%）和 60/40（−6.1%）更差。2022 年升息衝擊時是 −9.9%，比 60/40 的 −16.5% 好，但規則反而 <strong>+9.7%</strong>（12-1 動能及早轉進能源與美元）。</p>
+<p><strong>波動目標覆蓋（10%，只用 t−1 資訊；有／無覆蓋並列）</strong>　加上覆蓋後淨 Sharpe 由 0.63 <strong>降到</strong> 0.54，最大回撤由 −29.9% 縮小到 −20.5%，平均曝險 0.73。覆蓋只是降低風險，並沒有創造報酬；它也不是讓策略轉正的原因（「overlays refine, never redeem」）。</p>
+<p><strong>停損階梯</strong>　5% 觀察、10% 減半、15% 停止新交易、20% 全部平倉。驗證期依「回撤事件」計算各觸發 8／5／5／1 次（圖 7.6），20% 只在 2020 年 3 月觸發。</p>
+<p><strong>統計推論（驗證期）</strong>　淨 Sharpe 0.63，95% CI [−0.02, 1.29]；PSR(SR&gt;0) = 0.97；偏態 −0.82、峰態 12.2。依帳本 N = 93 次試驗計算的 <strong>DSR = 0.28</strong>（零技能下預期最大 Sharpe 0.84）；若只計 8 個策略層級配置，DSR = 0.67。最短紀錄長度依課本公式為 15 年，依 Bailey–López de Prado 公式為 7.0 年。</p>
+<div class="wcb"><b>What could break this</b>　beta 0.90 表示策略大部分報酬來自美股多頭，2015–2025 恰好是美股強勢期；換到股市橫盤的十年，策略與 60/40 的差距可能更大。換手 16.7 倍在成本上沒有問題，但代表模型的排名不穩定。壓力測試只有兩段，而且兩段都在驗證期內，參數也是看過驗證期之後才「固定」的。</div>
+
+<div class="break"></div>
+
+<h2>7. 結果、診斷與下一步（Ch. 20）</h2>
+<p><strong>Holdout 只執行一次</strong>：2026-11-08 23:39（<code>results/holdout_access.log</code>：touch #1，spec <code>7e75995d042147ae</code>）。執行前用開發期資料（2022–2023 代替 holdout）做過完整的試跑，確認程式不會中途當掉、需要第二次觸碰。</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Metric</th>
+<th>Validation 2015-2023</th>
+<th>Holdout 2024-2025</th>
+<th>Benchmark</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Signal</td>
+<td>Daily IC [NW 95% CI]</td>
+<td>0.078 [0.042, 0.113]</td>
+<td>0.064 [-0.014, 0.142]</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Signal</td>
+<td>ICIR (daily) / share of positive folds</td>
+<td>0.300 / 0.78</td>
+<td>0.249 / 1.00</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Portfolio</td>
+<td>Gross Sharpe</td>
+<td>0.68</td>
+<td>1.11</td>
+<td>EW 0.54 · 60/40 0.76 · SPY 0.73 (val)</td>
+</tr>
+<tr>
+<td>Portfolio</td>
+<td>Max drawdown / 2-way turnover p.a.</td>
+<td>-29.9% / 16.7x</td>
+<td>-19.9% / 14.3x</td>
+<td>EW 1.31 · 60/40 1.39 · SPY 1.27 (holdout)</td>
+</tr>
+<tr>
+<td>Costs</td>
+<td>Net Sharpe [95% CI] at assumed cost</td>
+<td>0.63 [-0.02, 1.29]</td>
+<td>1.08 [-0.31, 2.47]</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Costs</td>
+<td>Break-even cost (bp per leg)</td>
+<td>69</td>
+<td>128</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Risk overlay</td>
+<td>Net Sharpe / MDD with 10% vol target</td>
+<td>0.54 / -20.5%</td>
+<td>1.09 / -13.1%</td>
+<td>-</td>
+</tr>
+<tr>
+<td>Inference</td>
+<td>Deflated Sharpe (trials = N) / min. track record</td>
+<td>0.28 (N=93) / 15 y</td>
+<td>0.17 (N=93) / 5 y</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<p><strong>結果型態（Ch. 20 五型）</strong>　<strong>「方向維持，但 holdout 區間跨 0」</strong>（hold in direction, never resolved in significance）。預先登錄的確認檢定<strong>通過</strong>：holdout 平均 IC 0.064 &gt; 0、淨 Sharpe 1.08 &gt; 0。但 IC 的 95% CI [−0.014, 0.142] 與 Sharpe 的 CI [−0.31, 2.47] 都含 0；兩年日資料的 Sharpe 標準誤約 ±0.7，1.08 和 0 在統計上幾乎無法區分。</p>
+<p><strong>Holdout 各階的訊號與投組結果（同一凍結規格）</strong></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>mean</th>
+<th>lo</th>
+<th>hi</th>
+<th>p</th>
+<th>icir_daily</th>
+<th>share_pos_folds</th>
+<th>T</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rule</td>
+<td>0.049</td>
+<td>-0.035</td>
+<td>0.133</td>
+<td>0.252</td>
+<td>0.182</td>
+<td>1</td>
+<td>480</td>
+</tr>
+<tr>
+<td>ridge</td>
+<td>0.076</td>
+<td>-0.007</td>
+<td>0.159</td>
+<td>0.073</td>
+<td>0.282</td>
+<td>1</td>
+<td>480</td>
+</tr>
+<tr>
+<td>lgbm</td>
+<td>0.064</td>
+<td>-0.014</td>
+<td>0.142</td>
+<td>0.109</td>
+<td>0.249</td>
+<td>1</td>
+<td>480</td>
+</tr>
+<tr>
+<td>ensemble</td>
+<td>0.073</td>
+<td>-0.015</td>
+<td>0.162</td>
+<td>0.105</td>
+<td>0.257</td>
+<td>1</td>
+<td>480</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>strategy</th>
+<th>gross_sharpe</th>
+<th>net_sharpe</th>
+<th>net_sr_lo</th>
+<th>net_sr_hi</th>
+<th>net_cagr</th>
+<th>vol</th>
+<th>max_dd</th>
+<th>turnover_2way_ann</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>deployed_lgbm</td>
+<td>1.105</td>
+<td>1.077</td>
+<td>-0.315</td>
+<td>2.468</td>
+<td>0.179</td>
+<td>0.166</td>
+<td>-0.199</td>
+<td>14.274</td>
+</tr>
+<tr>
+<td>rule_mom_252_21</td>
+<td>1.359</td>
+<td>1.345</td>
+<td>-0.048</td>
+<td>2.738</td>
+<td>0.25</td>
+<td>0.178</td>
+<td>-0.17</td>
+<td>5.938</td>
+</tr>
+<tr>
+<td>ridge</td>
+<td>1.395</td>
+<td>1.357</td>
+<td>-0.036</td>
+<td>2.749</td>
+<td>0.246</td>
+<td>0.173</td>
+<td>-0.187</td>
+<td>15.408</td>
+</tr>
+<tr>
+<td>ensemble</td>
+<td>1.137</td>
+<td>1.116</td>
+<td>-0.275</td>
+<td>2.508</td>
+<td>0.21</td>
+<td>0.187</td>
+<td>-0.213</td>
+<td>11.901</td>
+</tr>
+<tr>
+<td>deployed + vol target</td>
+<td>1.124</td>
+<td>1.094</td>
+<td>-0.298</td>
+<td>2.486</td>
+<td>0.136</td>
+<td>0.123</td>
+<td>-0.131</td>
+<td>11.233</td>
+</tr>
+<tr>
+<td>EW_all_eligible</td>
+<td>1.314</td>
+<td>1.31</td>
+<td>-0.082</td>
+<td>2.703</td>
+<td>0.16</td>
+<td>0.119</td>
+<td>-0.131</td>
+<td>0.961</td>
+</tr>
+<tr>
+<td>60/40 SPY/AGG</td>
+<td>1.388</td>
+<td>1.388</td>
+<td>-0.005</td>
+<td>2.78</td>
+<td>0.15</td>
+<td>0.105</td>
+<td>-0.117</td>
+<td>0.641</td>
+</tr>
+<tr>
+<td>SPY</td>
+<td>1.271</td>
+<td>1.271</td>
+<td>-0.121</td>
+<td>2.663</td>
+<td>0.223</td>
+<td>0.169</td>
+<td>-0.198</td>
+<td>0.503</td>
+</tr>
+</tbody>
+</table>
+<p><strong>各階段在 holdout 的比較</strong>　訊號端，LightGBM 的 IC（0.064）仍高於規則（0.049），Ridge 最高（0.076）。投組端卻<strong>相反</strong>：淨 Sharpe 規則 1.35、Ridge 1.36、等權 1.31、60/40 1.39、SPY 1.27，部署模型 1.08 墊底。毛 Sharpe 1.11 對淨 1.08，成本並不是原因。</p>
+<p><strong>診斷</strong>　(1) <strong>價值在哪一關流失</strong>：不是訊號關（IC 方向維持）、不是成本關（兩平 128bp），而是 <strong>portfolio gate</strong>：IC 穩定、Sharpe 下降，這是 Ch. 20 定義的 <strong>portfolio-translation drift</strong>。2024–2025 是全面多頭（等權 Sharpe 1.31），在 beta 主導的市場中，換手 14 倍、前 10 名集中的排名轉換，把小幅的 IC 優勢吃掉了。(2) <strong>市場狀態</strong>：holdout 只有 42 天屬於「高波動 / 下跌趨勢」，沒有「低波動 / 下跌」，等於沒有真正的空頭可以檢驗波動開關。(3) <strong>機制</strong>：證偽條件 ④ 在驗證期<strong>沒有</strong>被觸發：動能 IC 平靜 0.095 [0.022, 0.169]、中 0.032、壓力 −0.075 [−0.160, 0.011]，支持波動開關；但在 discovery 期被否定。兩段資料互相矛盾，所以只能說「未定」。(4) <strong>限制因素</strong>：construction robustness（排名→權重的轉換不夠穩健）。</p>
+<p><strong>唯一的下一步</strong>　<strong>把部署模型的分數改成「與上月持股的平滑分數」（例如 3 個月指數平滑後再取前 10 名，或加入 no-trade band），把換手壓到與規則同級（≈ 6–7 倍/年），然後用同一個 walk-forward 協定重測 portfolio gate。</strong> 這屬於映射規則的改變，是 setup v2，需要新的 holdout（例如 2026 年起的前推資料）。不再調模型參數。依課本結論，這個第一輪策略不直接投入資金。</p>
+<p><img src="../results/figures/07_fig1_equity.png" style="width:92%"></p>
+<div class="fig">圖 7.1　Q：部署模型在扣成本後是否勝過非 ML 基準與被動指標？黑線為驗證／holdout 分界。驗證期的領先在 holdout 中被規則追上。</div>
+
+<p><img src="../results/figures/07_fig2_rolling_ic.png" style="width:92%"></p>
+<div class="fig">圖 7.2　Q：預測訊號在時間上穩定嗎？63 日滾動平均日 IC；2016、2018 與 2023 年有負的區段；holdout 大致為正，但 2025 年上半（關稅衝擊前後）有一段負值。</div>
+
+<p><img src="../results/figures/07_fig3_gross_net.png" style="width:78%"></p>
+<div class="fig">圖 7.3　Q：成本吃掉多少？毛 vs 淨 Sharpe；成本不是瓶頸（兩平 69bp 驗證／128bp holdout vs 假設 3.4bp）。</div>
+
+<p><img src="../results/figures/07_fig4_regime.png" style="width:80%"></p>
+<div class="fig">圖 7.4　Q：策略在什麼市場狀態賺／賠錢？狀態門檻用 t−2 收盤、擴張式中位數（時間點正確）；「低波動 / 下跌」只有 8／0 天，不具解讀價值。</div>
+
+<p>圖 7.5（SHAP beeswarm）即圖 5.2。</p>
+<p><img src="../results/figures/07_fig6_drawdown.png" style="width:92%"></p>
+<div class="fig">圖 7.6　Q：停損階梯什麼時候會觸發？虛線為 5／10／15／20% 門檻；20% 只在 2020 年 3 月觸發，holdout 最深 −19.9%（2025 年 4 月關稅衝擊）。</div>
+
+<div class="wcb"><b>What could break this</b>　holdout 只有兩年，又是罕見的全面多頭；「確認檢定通過」很可能只是 beta 的功勞（holdout 中連等權都有 1.31）。DSR 0.17 表示在 93 次試驗下，這個 Sharpe 不足以排除運氣。</div>
+
+<h2>8. 監控與部署計畫（Ch. 25–26，設計而非實作）</h2>
+<p><strong>一致性（parity）</strong>　實盤與回測共用同一個 <code>etfmom</code> 套件：資料 → 特徵 → 預測 → 訊號 → 委託，每一層存快照並計算雜湊，逐層比對回測與實盤（原始價格、特徵值、預測排名、目標權重、成交價差）。<strong>監控</strong>：每月計算 30／60／90 日滾動 Sharpe、回撤、命中率、IC，以及實盤 / 回測的實現比率（&lt; 0.5 連續 3 個月就調查）。<strong>漂移</strong>：前 5 大特徵的 PSI（0.10–0.25 觀察，&gt; 0.25 重訓），加上 SHAP 排名檢查（前 5 名有 2 個以上換掉即調查）；conformal 覆蓋率 &lt; 80% 代表校準過時。<strong>生命週期</strong>：每年初例行重訓；60 日 IC &lt; 0 而且 PSI &gt; 0.25 → 暫停；連續 12 個月 IC 的 NW CI 上界 &lt; 0、或回撤 ≥ 20% → 退場；正式投入資金前至少 6 個月影子交易（shadow mode）。<strong>區分三種失效</strong>：技術 bug（parity 某一層出現斷點 → 修程式，不重訓）、統計衰退（IC 與 PSI 同時惡化 → 重訓或退場）、成本膨脹（毛 Sharpe 穩定、淨 Sharpe 下滑或實際價差 &gt; 假設 2 倍 → 降低再平衡頻率）。</p>
+<div class="wcb"><b>What could break this</b>　月頻策略一年只有 12 個決策點，30 日監控指標的雜訊遠大於訊號；觸發門檻需要用影子交易期的資料重新校準，而不是直接沿用回測分布。</div>
+
+<div class="break"></div>
+
+<h2>附錄 A　研究帳本、執行紀錄、程式庫地圖</h2>
+<h3>A1. 研究帳本摘要（<code>run_log.csv</code>，共 196 列 run）</h3>
+<table>
+<thead>
+<tr>
+<th>Trial family</th>
+<th>試驗數</th>
+<th>內容</th>
+<th>評估窗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>feature_triage</td>
+<td>21（+ 去重紀錄 1）</td>
+<td>17 訊號五道關卡、4 狀態三分位</td>
+<td>discovery 2008-01 ～ 2014-11</td>
+</tr>
+<tr>
+<td>ridge_alpha</td>
+<td>10</td>
+<td>α = 10⁻⁴ … 10⁵</td>
+<td>2014 調參窗</td>
+</tr>
+<tr>
+<td>lgbm_optuna</td>
+<td>50</td>
+<td>TPE、提早停止</td>
+<td>2014 調參窗</td>
+</tr>
+<tr>
+<td>model_ladder</td>
+<td>4（+ 部署決策 1）</td>
+<td>rule / ridge / lgbm / ensemble</td>
+<td>驗證 2015–2023</td>
+</tr>
+<tr>
+<td>strategy_backtest、allocator、risk_overlay</td>
+<td>8</td>
+<td>4 策略、3 配置、1 覆蓋</td>
+<td>驗證 2015–2023</td>
+</tr>
+<tr>
+<td>holdout</td>
+<td>1</td>
+<td>確認檢定（PASS）</td>
+<td>2024–2025，唯一一次</td>
+</tr>
+</tbody>
+</table>
+<p>試驗次數依 (family, trial) 去重計算，決策與去重紀錄列不計入（N = 93）。帳本 1–103 列是稽核前的第一次執行（含一次只改報表的重跑），104–195 列是稽核修正後的重跑，196 列是 holdout 確認檢定；同一個試驗名稱不重複計數，但兩次的結果都保留在帳本中。</p>
+<h3>A2. Walk-forward 切分日期（交易日，purge 22）</h3>
+<table>
+<thead>
+<tr>
+<th>name</th>
+<th>train_start</th>
+<th>train_end</th>
+<th>valid_start</th>
+<th>valid_end</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2015</td>
+<td>2007-01-01</td>
+<td>2014-11-28</td>
+<td>2015-01-02</td>
+<td>2015-12-31</td>
+</tr>
+<tr>
+<td>2016</td>
+<td>2007-01-01</td>
+<td>2015-11-30</td>
+<td>2016-01-04</td>
+<td>2016-12-30</td>
+</tr>
+<tr>
+<td>2017</td>
+<td>2007-01-01</td>
+<td>2016-11-29</td>
+<td>2017-01-03</td>
+<td>2017-12-29</td>
+</tr>
+<tr>
+<td>2018</td>
+<td>2007-01-01</td>
+<td>2017-11-28</td>
+<td>2018-01-02</td>
+<td>2018-12-31</td>
+</tr>
+<tr>
+<td>2019</td>
+<td>2007-01-01</td>
+<td>2018-11-27</td>
+<td>2019-01-02</td>
+<td>2019-12-31</td>
+</tr>
+<tr>
+<td>2020</td>
+<td>2007-01-01</td>
+<td>2019-11-27</td>
+<td>2020-01-02</td>
+<td>2020-12-31</td>
+</tr>
+<tr>
+<td>2021</td>
+<td>2007-01-01</td>
+<td>2020-11-30</td>
+<td>2021-01-04</td>
+<td>2021-12-31</td>
+</tr>
+<tr>
+<td>2022</td>
+<td>2007-01-01</td>
+<td>2021-11-30</td>
+<td>2022-01-03</td>
+<td>2022-12-30</td>
+</tr>
+<tr>
+<td>2023</td>
+<td>2007-01-01</td>
+<td>2022-11-29</td>
+<td>2023-01-03</td>
+<td>2023-12-29</td>
+</tr>
+</tbody>
+</table>
+<p>Holdout fold：2024 年模型 train_end 2023-11-28；2025 年模型 train_end 2024-11-27（依同一協定以 2024 年資料重訓，屬於凍結規格的一部分）。</p>
+<h3>A3. 獨立洩漏稽核（holdout 前，9 個代理人，5 個面向 + 反向驗證）</h3>
+<p>已確認並修正的問題：(1) discovery 與調參窗的<strong>末端</strong>沒有 purge，2014 年最後 22 日的標籤讀到 2015 年開盤 → 改成窗口截在 2014-11-28；(2) 部署規則的實作與合約文字不一致 → 改用「最佳較簡單階」；(3) 帳本的 git commit 欄位沒有把未追蹤的新檔案算成 dirty。低嚴重度的修正包括：波動覆蓋改成不使用成交當天的開盤價、狀態標籤延遲由 t−1 改為 t−2、壓力測試只放大價差、刪除尾端多出來的零報酬日、缺價時確保總曝險 ≤ 1、試驗數排除紀錄列、新增 Bailey–López de Prado 的 MinTRL。修正後 03–05 全部重跑。修正前後部署模型都是 LightGBM，但成對檢定的結論是在修正後才成立，已在第 5 節揭露。<strong>沒有發現特徵、標籤、purge 或回測引擎有前視偏誤。</strong></p>
+<h3>A4. 程式庫地圖與重現方式</h3>
+<pre><code>setup.yaml                 交易設定 v1（合約）          run_log.csv           研究帳本
+src/etfmom/                data / features / models / backtest / metrics / ledger
+scripts/download_data.py   重建資料集                   scripts/run_notebooks.py  執行 01–05（06、07 需明示）
+scripts/freeze_spec.py     凍結規格（holdout 閘門需要）  scripts/build_report.py   產生本 PDF
+notebooks/01_setup … 07_results（.py 為原始碼，.ipynb 為執行結果）
+results/tables, results/figures, results/holdout_access.log
+</code></pre>
+<p>重現：<code>uv sync</code> → <code>uv run python scripts/download_data.py</code> → <code>uv run python scripts/run_notebooks.py</code> →（holdout 已觸碰過）<code>HOLDOUT_RERUN=1 uv run python scripts/run_notebooks.py 06 07</code>，重跑會記為 touch #2。數字差異的可能來源：Yahoo 回溯修改調整因子（下載日期不同）、LightGBM 多執行緒（已設 <code>deterministic</code>、seed 42）。</p></body></html>

@@ -1,0 +1,23 @@
+feature,role,driver hypothesis,lookback,representation,known failure mode,sign
+mom_252_21,signal,Persistence: under-reaction / slow-moving capital (12-1 momentum),252,"return, XS rank",momentum crashes after volatility spikes,+
+mom_126_21,signal,Persistence at 6-1 months,126,"return, XS rank",regime concentration in one asset class,+
+mom_63,signal,Persistence at 3 months (faster trend),63,"return, XS rank",whipsaw in range-bound markets,+
+volscaled_mom_252_21,signal,Persistence per unit risk (TS-momentum scaling),252,"return / vol, XS rank",low-vol bond ETFs dominate the ranking,+
+sharpe_126,signal,Trend earned with less dispersion repeats,126,"mean/std of log returns, XS rank",unbounded when vol -> 0,+
+dist_52w_high,signal,Anchoring on the 52-week high delays reaction to news,252,"close / 252d max - 1, XS rank",piles up at 0 in sustained bull runs,+
+sma_ratio_200,signal,Trend-following: price above its 200d average,200,"close / SMA200 - 1, XS rank",lags turning points by months,+
+trend_consistency_63,signal,Frog-in-the-pan: gradual information diffuses slowly,63,"share of up sessions, XS rank",noisy for low-vol funds,+
+mom_accel,signal,Trend acceleration: recent leg vs older leg,126,"mom_63 - (mom_126_21 - mom_63), XS rank",flags reversals as acceleration,+
+rev_21,signal,Short-term reversal: liquidity provision to 1-month flow pressure,21,"return, XS rank",ETF reversal weaker than single stocks,−
+rev_5,signal,Weekly reversal: liquidity provision,5,"return, XS rank",dominated by noise at monthly horizon,−
+vol_63,signal,Low-risk anomaly: leverage-constrained investors overpay for risk,63,"annualised std, XS rank",mixes asset classes with structurally different vol,−
+beta_spy_126,signal,Betting-against-beta: funding constraints,126,"OLS beta to SPY, XS rank",beta unstable across regimes,−
+max_ret_21,signal,Lottery demand: investors overpay for extreme upside,21,"max daily return, XS rank",driven by single events,−
+skew_63,signal,Skewness preference: positively skewed assets overpriced,63,"sample skewness, XS rank",estimation noise in 63 obs,−
+amihud_63,signal,Illiquidity premium: compensation for price impact,63,"mean |r| / $volume, XS rank",ETF liquidity != underlying liquidity,+
+volume_trend_21_126,signal,Attention: rising participation confirms the move,126,"log(ADV21/ADV126), XS rank",index events and rebalancing days,+
+asset_rvol_pct,state,Own volatility vs own history: stress state of the asset,252,percentile of vol_21 in own 252d,single shock dominates,(state)
+mkt_rvol_pct,state,Market risk environment (SPY 21d vol vs expanding history),252,expanding percentile,level shifts in vol regime,(state)
+mkt_trend,state,Market trend state (SPY vs SMA200),200,ratio,late at turning points,(state)
+corr_spy_tlt_63,state,Hedge regime: stock-bond correlation,63,level,"nonsynchronous trading, one pair stands for all",(state)
+xs_disp_21,state,Opportunity set: cross-sectional dispersion of 1-month returns,21,XS std,dominated by commodity outliers,(state)
