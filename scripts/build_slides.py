@@ -176,7 +176,7 @@ for i, (h, b) in enumerate(cards):
     text(s, cx + 0.25, 5.15, 2.45, 1.3, b.split("\n"), size=15, spacing=4)
 footer(s, 3)
 s.notes_slide.notes_text_frame.text = ("協定的六項承諾：擴張窗、一年一步、每年重訓、標籤 21 日、purge 22 日、最長回看 252 日。"
-    "篩選、調參、驗證、holdout 四段互不重疊；稽核後我把篩選與調參窗的尾端也 purge，截在 2014-11-28。"
+    "篩選、調參、驗證、holdout 四段互不重疊；檢查後我把篩選與調參窗的尾端也 purge，截在 2014-11-28。"
     "標籤從隔日開盤算到第 22 天開盤，和回測成交價完全一致。")
 
 # ---------------------------------------------------------------- 4 data
@@ -250,10 +250,10 @@ box(s, 7.6, 4.65, 5.15, 1.95, fill=TINT)
 text(s, 7.85, 4.8, 4.7, 1.7, [[("部署規則（事先登錄）", {"bold": True, "size": 15, "color": TEAL})],
      f"LightGBM − Ridge：下界 {p1['lo']:+.4f} > 0 → 部署 LightGBM",
      f"集成 − LightGBM：下界 {p2['lo']:+.4f} → 不採用",
-     [("邊際很薄，而且是稽核修正後才成立", {"italic": True, "color": RED})]], size=14, spacing=5)
+     [("邊際很薄，而且是修正問題後才成立", {"italic": True, "color": RED})]], size=14, spacing=5)
 footer(s, 6)
 s.notes_slide.notes_text_frame.text = ("規則的 IC 信賴區間含 0；LightGBM 0.078，區間不含 0。部署規則是：相對『最佳的較簡單階』成對差的下界大於 0 才往上爬。"
-    "LightGBM 對 Ridge 的下界只有 +0.0026，而且稽核前因為比較對象寫錯、調參窗沒 purge，這個值是 −0.0015。這件事我在報告裡完整揭露。")
+    "LightGBM 對 Ridge 的下界只有 +0.0026，而且修正前因為比較對象寫錯、調參窗沒 purge，這個值是 −0.0015。這件事我在報告裡完整揭露。")
 
 # ---------------------------------------------------------------- 7 headline table
 s = new(); title(s, "總表：驗證期與 holdout 並列", f"確認檢定（IC > 0 且淨 Sharpe > 0）：{'通過' if ho_inf['confirmatory_test_passed'] else '未通過'}，但兩個信賴區間都含 0")
@@ -339,7 +339,7 @@ for i, (h, d, col) in enumerate(steps):
         a.fill.solid(); a.fill.fore_color.rgb = INK; a.line.fill.background()
 box(s, 0.6, 4.35, 12.1, 2.25, fill=TINT)
 text(s, 0.9, 4.55, 11.5, 2.0, [[("怎麼證明", {"bold": True, "size": 17, "color": TEAL})],
-     "截斷測試：把資料截在 t 重算全部特徵，與全樣本逐值相同（6 個日期＋稽核另測 12 個）。",
+     "截斷測試：把資料截在 t 重算全部特徵，與全樣本逐值相同（6 個日期＋之後另測 12 個月底）。",
      "Purge：訓練最後一列的標籤出場日 < 驗證首日（每個 fold 間隔 23 個交易日）。",
      "Holdout：凍結規格雜湊 7e75995d042147ae；存取紀錄 touch #1，之後無再觸碰。"], size=15, spacing=8)
 footer(s, 11)
