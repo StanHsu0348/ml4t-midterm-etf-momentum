@@ -1,0 +1,12 @@
+Commitment,Value
+Window,expanding from 2007-01-01
+Step size,1 calendar year
+Retraining cadence,annual (start of each validation/holdout year)
+Label horizon,21 sessions (open t+1 -> open t+22)
+Label buffer (purge),22 sessions
+Feature buffer (embargo),0 (training never follows validation)
+Longest feature lookback,252 sessions
+Discovery (feature triage),2008-01-01 to 2014-12-31
+HP tuning (fixed split),"train <= 2013-12-31, valid 2014-01-01 to 2014-12-31"
+Validation folds,2015-2023 (one calendar year each)
+Holdout (sealed),2024-01-01 to 2025-12-31

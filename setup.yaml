@@ -1,0 +1,151 @@
+# ============================================================================
+# Trading setup v1 — ETF cross-asset momentum x volatility-state gate
+# Written and committed BEFORE any feature, model or backtest was computed.
+# Parameter tuning stays inside v1; any change to mechanics (long/short,
+# new cost component, new cadence, new universe rule) => setup_version v2.
+# ============================================================================
+strategy_id: etf_mom_volgate
+setup_version: v1
+sealed_on: '2026-11-08'          # holdout sealed on the day this file was committed
+
+hypothesis:
+  entry_point: mechanism_first
+  mechanism: >-
+    Slow-moving capital and investor under-reaction make 6-12 month relative
+    performance across asset-class ETFs persist over the next month. The
+    persistence is weakest right after volatility spikes, when crashed losers
+    rebound sharply (momentum crashes), so a volatility state should gate it.
+  source_of_edge: [flow_predictability, risk_compensation]
+  counterparty: >-
+    Rebalancers and benchmark-constrained allocators who trade against trends
+    on a calendar, and investors who anchor on stale prices.
+  falsification:
+    - Rule-baseline and deployed-model validation IC: Newey-West 95% CI includes 0  -> no signal, stop.
+    - Break-even cost below 2x the assumed per-leg cost                             -> not tradable, stop.
+    - Holdout net Sharpe < 0 or holdout mean IC <= 0                                 -> not confirmed.
+    - Momentum IC NOT lower in the high-volatility tercile than in calm terciles     -> gate mechanism rejected.
+
+data:
+  route: B_own_download          # Yahoo Finance via yfinance (same 100-ETF list as textbook case study)
+  vendor: yahoo_finance
+  symbols_file: data/universe.csv
+  start: '2006-01-01'
+  end: '2025-12-31'
+  frequency: daily
+  calendar: NYSE
+  timezone: America/New_York
+  prices_for_returns: adjusted (split + distribution) OHLC
+  prices_for_dollars: unadjusted close (dollar volume, per-share costs)
+
+universe:
+  candidate_pool: 100 ETFs, 9 asset-class groups (data/universe.csv)
+  eligibility:                    # evaluated with information available at the decision close t
+    min_history_days: 273         # 252-day lookback + 21-day skip must exist
+    adv_window_days: 63
+    min_median_dollar_volume_usd: 10_000_000   # median(unadjusted close * volume) over trailing 63 days
+  survivorship_note: >-
+    The 100 names were chosen in 2025, so funds that closed before then are
+    absent (survivorship bias, disclosed in the PIT checklist).
+
+decision:
+  cadence: monthly_month_end
+  snapshot: close of last NYSE session of the month (t)
+  execution: open of next session (t+1)
+  execution_delay_sessions: 1
+  holding: until the next rebalance execution open (~21 sessions)
+
+admissible_information:
+  prices: adjusted and unadjusted OHLCV up to and including close of t
+  non_price_data: none in v1
+  longest_feature_lookback_sessions: 252
+
+label:
+  name: fwd_open_ret_21d
+  type: fixed_horizon_continuous_return
+  definition: open[t+22] / open[t+1] - 1   # matches the next-open fill rule
+  horizon_sessions: 21
+  target_transform: cross-sectional demean per date; winsorize 1/99 pct fitted on training fold
+
+mapping:
+  class: long_only_rank_and_rebalance
+  score: "model prediction (rule baseline = 12-1 month momentum, mom_252_21)"
+  entry: top_n by score among eligible names
+  top_n: 10
+  sizing: equal_weight
+  exit: name leaves the top_n at the next rebalance
+  no_trade_state:
+    - name has no valid open bar at execution -> no trade, keep current weight
+    - fewer than top_n eligible names -> unfilled weight held as cash (0% return)
+
+constraints:
+  leverage: 1.0                   # fully invested, no leverage
+  shorting: false
+  max_weight: 0.10
+  checked: inside the simulation at every rebalance
+
+costs:
+  class: per_share_plus_half_spread
+  commission_per_share_usd: 0.0035
+  half_spread_usd:
+    mega: 0.005                   # SPY QQQ IWM EFA EEM DIA VTI
+    sector_spdr: 0.01             # XL* sector SPDRs
+    default: 0.02
+  conversion: per-leg cost bps = (commission + half_spread) / unadjusted open price
+  stressed_multiplier: 3.0        # stress tests use 3x spreads
+  sweep_multipliers: [0, 0.5, 1, 2, 3, 4, 6, 8]
+
+evaluation:                       # the six design commitments (Ch. 6)
+  window: expanding               # train from first valid decision date to fold start
+  first_train_date: '2007-01-01'
+  step: 1 calendar year
+  retrain_cadence: annual (start of each validation/holdout year)
+  label_horizon_sessions: 21
+  label_buffer_sessions: 22       # purge: label reads open[t+22]
+  feature_embargo_sessions: 0     # training never follows validation in time
+  longest_feature_lookback_sessions: 252
+  discovery_period: ['2008-01-01', '2014-12-31']      # feature triage only
+  tuning_split:                                        # fixed-holdout hyper-parameter tuning
+    train_end: '2013-12-31'
+    valid: ['2014-01-01', '2014-12-31']
+  validation_folds: [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
+  holdout: ['2024-01-01', '2025-12-31']                # SEALED, touched exactly once
+  periods_per_year: 252
+  ic_yardstick: mean daily Spearman IC, Newey-West 95% CI (lag 21)
+
+models:
+  ladder:
+    - {rung: 1, name: rule_mom_252_21, required: true}
+    - {rung: 2, name: ridge, required: true, alpha_grid: [1.0e-4, 1.0e-3, 1.0e-2, 1.0e-1, 1, 10, 100, 1.0e+3, 1.0e+4, 1.0e+5]}
+    - {rung: 3, name: lightgbm, required: true, objective: l1, max_optuna_trials: 50}
+    - {rung: 5, name: ensemble_zscore_top3, required: false}
+  training_rows: every 5th session (weekly sampling to cut label overlap)
+  deploy_rule: >-
+    Deploy the most complex rung whose paired daily-IC difference against the
+    best simpler rung has a Newey-West 95% CI lower bound > 0 on the validation
+    folds; otherwise deploy the simpler rung.
+  seeds: 42
+
+portfolio:
+  allocators: [equal_weight, inverse_vol_63d, hrp_63d]
+  covariance_window_sessions: 63
+  benchmarks: [equal_weight_all_eligible, sixty_forty_SPY_AGG, SPY]
+
+risk:
+  overlay: vol_target            # uses t-1 information only
+  vol_target_annual: 0.10
+  vol_estimation_window_sessions: 63
+  max_gross_after_overlay: 1.0
+  kill_switch_ladder:            # drawdown from peak -> action
+    - {dd: 0.05, action: watch}
+    - {dd: 0.10, action: halve_gross}
+    - {dd: 0.15, action: halt_new_trades}
+    - {dd: 0.20, action: unwind_to_cash}
+  stress_episodes:
+    covid_2020: ['2020-02-19', '2020-04-30']
+    rate_shock_2022: ['2022-01-03', '2022-10-31']
+
+confirmatory_test:              # pre-registered, run once on the holdout
+  strategy: deployed rung, equal_weight allocator, assumed costs, no overlay
+  metrics: [mean daily IC, net Sharpe]
+  pass_if: mean daily IC > 0 AND net Sharpe > 0
+  reported_with: 95% CI, Deflated Sharpe (trial count from run_log.csv)
