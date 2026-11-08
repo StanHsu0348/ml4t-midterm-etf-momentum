@@ -21,6 +21,7 @@ from etfmom.data import load_panel, per_leg_cost_bps, universe, wide, month_end_
 from etfmom.features import REGISTRY, SIGNALS, STATES, build_panel, compute_raw_features
 from etfmom.ledger import log_run
 from etfmom.metrics import benjamini_hochberg, daily_ic, effective_n, ic_summary, nw_mean
+from etfmom.models import selection_rows
 
 plt.style.use("seaborn-v0_8-whitegrid")
 S = setup()
@@ -29,8 +30,10 @@ panel = build_panel(df)
 panel.to_parquet(ART / "panel_dev.parquet")
 LABEL = "fwd_open_ret_21d"
 d0, d1 = S["evaluation"]["discovery_period"]
-disc = panel.loc[d0:d1]
-print(panel.shape, "| discovery rows:", len(disc))
+dates = panel.index.get_level_values("date").unique()
+first_val = f"{S['evaluation']['validation_folds'][0]}-01-01"
+disc = selection_rows(panel, d0, first_val, dates)       # purged at its end: no label reaches into 2015
+print(panel.shape, "| discovery rows:", len(disc), "| last discovery date:", disc.index.get_level_values("date").max().date())
 
 # %% [markdown]
 # ## Label specification and the close-vs-open convention
@@ -40,7 +43,6 @@ lab = panel[[LABEL, "fwd_close_ret_21d"]].dropna()
 gap = (lab["fwd_close_ret_21d"] - lab[LABEL]).abs()
 ic_lab = daily_ic(disc, "mom_252_21", "fwd_close_ret_21d")
 ic_open = daily_ic(disc, "mom_252_21", LABEL)
-dates = panel.index.get_level_values("date").unique()
 n_nom = len(lab)
 n_eff_overlap = n_nom / S["label"]["horizon_sessions"]
 label_tab = pd.DataFrame({
@@ -104,7 +106,7 @@ fig.colorbar(im, fraction=0.04); fig.tight_layout(); fig.savefig(FIG / "03_featu
 # %%
 cost = per_leg_cost_bps(df)
 me = month_end_sessions(pd.DatetimeIndex(dates))
-me_disc = me[(me >= d0) & (me <= d1)]
+me_disc = me[(me >= d0) & (me <= disc.index.get_level_values("date").max())]
 rt_cost = 2 * float(np.nanmedian(cost.reindex(me_disc).values))       # round-trip, fraction
 yr_blocks = sorted(set(disc.index.get_level_values("date").year))
 
@@ -167,7 +169,7 @@ tri = tri.join(dec)
 tri.round(4).to_csv(TAB / "03_triage.csv")
 for feat, r in tri.iterrows():
     log_run("feature_triage", feat, "discovery", {"label": LABEL, "expected_sign": int(r.expected_sign)},
-            f"{d0}..{d1}", {k: float(r[k]) for k in ["ic_mean", "ic_lo", "ic_hi", "p_nw", "same_sign_years", "quintile_monotonicity", "q5_q1_spread_month", "cost_month"]},
+            f"{d0}..{disc.index.get_level_values('date').max().date()}", {k: float(r[k]) for k in ["ic_mean", "ic_lo", "ic_hi", "p_nw", "same_sign_years", "quintile_monotonicity", "q5_q1_spread_month", "cost_month"]},
             r.decision, r.reason)
 log_run("feature_triage", "correlation_dedupe", "discovery", {"threshold_abs_rho": 0.8, "linkage": "average"}, f"{d0}..{d1}",
         {"n_clusters": int(cl.nunique())}, "applied", "")
@@ -185,7 +187,7 @@ def pit_tercile(x: pd.Series) -> pd.Series:
     t = pd.Series(np.where(s <= lo, 0, np.where(s <= hi, 1, 2)), index=s.index).where(lo.notna())
     return t
 
-ic_mom = daily_ic(panel.loc[:"2014-12-31"], "mom_252_21", LABEL)
+ic_mom = daily_ic(disc, "mom_252_21", LABEL)   # discovery window only (2008 .. purged end of 2014)
 state_rows = []
 for st in [c for c in STATES if c != "asset_rvol_pct"]:
     terc = pit_tercile(panel[st]).reindex(ic_mom.index)
@@ -196,7 +198,7 @@ for st in [c for c in STATES if c != "asset_rvol_pct"]:
 st_tab = pd.DataFrame(state_rows)
 st_tab.round(4).to_csv(TAB / "03_state_heterogeneity.csv", index=False)
 for st in st_tab.state.unique():
-    log_run("feature_triage", st, "discovery_state_tercile", {"signal": "mom_252_21"}, f"2008..{d1}",
+    log_run("feature_triage", st, "discovery_state_tercile", {"signal": "mom_252_21"}, f"{d0}..{disc.index.get_level_values('date').max().date()}",
             {r.tercile: float(r.ic_mean) for r in st_tab[st_tab.state == st].itertuples()}, "keep_as_state", "regime heterogeneity")
 st_tab.pivot(index="state", columns="tercile", values="ic_mean")[["low", "mid", "high"]].round(4)
 

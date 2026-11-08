@@ -24,8 +24,8 @@ FIELDS = [
 def git_commit() -> str:
     try:
         sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, text=True).strip()
-        dirty = subprocess.call(["git", "diff", "--quiet", "HEAD", "--", "src", "notebooks", "setup.yaml"], cwd=ROOT)
-        return sha + ("-dirty" if dirty else "")
+        st = subprocess.check_output(["git", "status", "--porcelain", "--", "src", "setup.yaml", "notebooks/*.py", "scripts"], cwd=ROOT, text=True)
+        return sha + ("-dirty" if st.strip() else "")
     except Exception:
         return "no-git"
 
@@ -75,9 +75,18 @@ def log_run(trial_family: str, trial: str, run: str, config: dict, eval_window: 
         "decision": decision,
         "gate": gate,
     }
+    import pandas as pd
+    prev = pd.read_csv(LEDGER, dtype=str, keep_default_na=False)
+    same = prev[(prev.trial_family == trial_family) & (prev.trial == trial) & (prev.run == run)
+                & (prev.config == row["config"]) & (prev.metrics == row["metrics"])]
+    if len(same):                      # identical re-execution: same evidence, not a new run
+        return int(same.run_id.iloc[0])
     with open(LEDGER, "a", newline="") as f:
         csv.DictWriter(f, fieldnames=FIELDS).writerow(row)
     return rid
+
+
+BOOKKEEPING = {"correlation_dedupe", "deploy_decision", "confirmatory_test"}
 
 
 def trial_count(families: list[str] | None = None) -> int:
@@ -85,6 +94,7 @@ def trial_count(families: list[str] | None = None) -> int:
     if not LEDGER.exists():
         return 0
     df = pd.read_csv(LEDGER)
+    df = df[~df.trial.isin(BOOKKEEPING)]             # decisions/dedupe steps evaluate nothing new
     if families:
         df = df[df.trial_family.isin(families)]
     return int(df.drop_duplicates(["trial_family", "trial"]).shape[0])

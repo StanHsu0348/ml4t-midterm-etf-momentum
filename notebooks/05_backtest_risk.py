@@ -21,7 +21,7 @@ from etfmom.config import ART, FIG, TAB, setup
 from etfmom.data import eligibility, load_panel, month_end_sessions
 from etfmom.features import STATES
 from etfmom.ledger import log_run, trial_count
-from etfmom.metrics import daily_ic, dd_stats, dsr, ic_summary, min_trl_years, nw_mean, perf_summary, psr, sharpe, sharpe_ci
+from etfmom.metrics import daily_ic, dd_stats, dsr, ic_summary, min_trl_bailey, min_trl_years, nw_mean, perf_summary, psr, sharpe, sharpe_ci
 from etfmom.models import LABEL, LGBMModel, RidgeModel, RuleModel, ensemble, train_rows, validation_folds
 
 plt.style.use("seaborn-v0_8-whitegrid")
@@ -163,8 +163,9 @@ ov_tab.round(3).to_csv(TAB / "05_overlay.csv"); ov_tab.round(3)
 r = runs[dep]["ret"]
 spy_close = mkt.close_adj["SPY"]
 spy_vol = np.log(spy_close).diff().rolling(21).std() * np.sqrt(252)
-vol_reg = (spy_vol > spy_vol.expanding(252).median()).map({True: "high vol", False: "low vol"}).shift(1)   # known at t-1
-trend_reg = (spy_close > spy_close.rolling(200).mean()).map({True: "up trend", False: "down trend"}).shift(1)
+# a return indexed d covers open(d-1)->open(d); the regime must be known before open(d-1): close of d-2
+vol_reg = (spy_vol > spy_vol.expanding(252).median()).map({True: "high vol", False: "low vol"}).shift(2)
+trend_reg = (spy_close > spy_close.rolling(200).mean()).map({True: "up trend", False: "down trend"}).shift(2)
 def var_cvar(x):
     q = x.quantile(0.05); return {"VaR95": -q, "CVaR95": -x[x <= q].mean(), "days": len(x)}
 risk_rows = {"all": var_cvar(r)}
@@ -216,9 +217,10 @@ mech.round(4).to_csv(TAB / "05_mechanism_vol_terciles.csv"); mech.round(4)
 # ## Stress tests: COVID 2020 and the 2022 rate shock with 3x spreads
 
 # %%
-stress_runs = {"deployed (3x costs)": bt.run(dec_scores[deployed], mkt, V0, V1, cost_mult=S["costs"]["stressed_multiplier"]),
-               "deployed + overlay (3x)": bt.run(dec_scores[deployed], mkt, V0, V1, cost_mult=S["costs"]["stressed_multiplier"], vol_target=0.10),
-               "rule (3x costs)": bt.run(dec_scores["rule"], mkt, V0, V1, cost_mult=S["costs"]["stressed_multiplier"]),
+SM = S["costs"]["stressed_multiplier"]
+stress_runs = {"deployed (3x spreads)": bt.run(dec_scores[deployed], mkt, V0, V1, spread_mult=SM),
+               "deployed + overlay (3x spreads)": bt.run(dec_scores[deployed], mkt, V0, V1, spread_mult=SM, vol_target=0.10),
+               "rule (3x spreads)": bt.run(dec_scores["rule"], mkt, V0, V1, spread_mult=SM),
                "60/40": runs["60/40 SPY/AGG"], "SPY": runs["SPY"]}
 st_rows = []
 for ep, (a, b) in S["risk"]["stress_episodes"].items():
@@ -233,13 +235,14 @@ stress.pivot(index="strategy", columns="episode", values="return").round(4)
 # ## Statistical inference on the validation Sharpe
 
 # %%
-n_all = trial_count()
-n_strat = trial_count(["strategy_backtest", "allocator", "risk_overlay", "model_ladder"])
+n_all = trial_count()                                                     # every adaptive choice evaluated on data
+n_strat = trial_count(["strategy_backtest", "allocator", "risk_overlay"])  # distinct strategy configurations backtested
 ci = sharpe_ci(r)
 inf = {"net_sharpe": ci["sr"], "ci_lo": ci["lo"], "ci_hi": ci["hi"], "psr_vs_0": psr(r),
        "dsr_all_trials": dsr(r, n_all)["dsr"], "n_trials_all": n_all, "sr0_all": dsr(r, n_all)["sr0_ann"],
        "dsr_strategy_trials": dsr(r, n_strat)["dsr"], "n_trials_strategy": n_strat,
-       "skew": dsr(r, n_all)["skew"], "kurtosis": dsr(r, n_all)["kurt"], "min_track_record_years": min_trl_years(ci["sr"])}
+       "skew": dsr(r, n_all)["skew"], "kurtosis": dsr(r, n_all)["kurt"], "min_track_record_years": min_trl_years(ci["sr"]),
+       "min_trl_years_bailey_ldp": min_trl_bailey(r)}
 pd.Series(inf).to_json(TAB / "05_inference.json", indent=2)
 pd.Series(inf).round(3)
 
@@ -278,5 +281,7 @@ fig.tight_layout(); fig.savefig(FIG / "05_rolling_ic.png", dpi=150)
 gn = pd.DataFrame({"gross": {k: perf.loc[k, "gross_sharpe"] for k in (dep, "rule_mom_252_21")}, "net": {k: perf.loc[k, "net_sharpe"] for k in (dep, "rule_mom_252_21")}})
 ax = gn.plot.bar(figsize=(6, 3.2), rot=0); ax.set_title(f"Q: how much Sharpe do costs take? break-even {be[dep]:.0f} bp/leg (deployed)", fontsize=9)
 plt.tight_layout(); plt.savefig(FIG / "05_gross_net.png", dpi=150)
+pd.DataFrame({**{k: v["ret"] for k, v in runs.items()}, "deployed + vol target": ov["ret"]}).to_parquet(ART / "validation_returns.parquet")
+pd.DataFrame({k: v["gross"] for k, v in runs.items()}).to_parquet(ART / "validation_gross.parquet")
 json.dump({"triggers": triggers, "drawdown": {k: str(v) for k, v in ddx.items()}, "breakeven_bps": be, "assumed_bps": assumed_bps},
           open(TAB / "05_misc.json", "w"), indent=2, default=str)

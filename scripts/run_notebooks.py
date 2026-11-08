@@ -1,6 +1,7 @@
 """Convert notebooks/*.py (jupytext percent format) to .ipynb and execute them in order.
 
-Usage: uv run python scripts/run_notebooks.py [01 02 ...]
+Usage: uv run python scripts/run_notebooks.py            # development notebooks 01-05
+       uv run python scripts/run_notebooks.py 06 07      # holdout + results (explicit only)
 """
 import sys
 from pathlib import Path
@@ -12,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 NB = ROOT / "notebooks"
 
 if __name__ == "__main__":
-    wanted = sys.argv[1:]
+    wanted = sys.argv[1:] or ["01", "02", "03", "04", "05"]
     for py in sorted(NB.glob("[0-9][0-9]_*.py")):
         if wanted and py.name[:2] not in wanted:
             continue

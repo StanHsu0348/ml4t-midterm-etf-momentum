@@ -30,8 +30,9 @@ from .data import month_end_sessions, per_leg_cost_bps, wide
 class Market:
     open_adj: pd.DataFrame       # for returns
     close_adj: pd.DataFrame      # for allocator risk estimates
-    cost: pd.DataFrame           # per-leg cost fraction at the raw open
+    cost: pd.DataFrame           # per-leg cost fraction at the raw open (commission + half-spread)
     sessions: pd.DatetimeIndex
+    spread: pd.DataFrame = None  # half-spread part of `cost` (for spread-only stress)
     oo_ret: pd.DataFrame = field(init=False)   # return from open d to open d+1, indexed by d
 
     def __post_init__(self):
@@ -40,8 +41,11 @@ class Market:
 
 
 def market_from_panel(df: pd.DataFrame) -> Market:
+    from .data import half_spread_usd
     o, c = wide(df, "open"), wide(df, "close")
-    return Market(o, c, per_leg_cost_bps(df).reindex(o.index), pd.DatetimeIndex(o.index))
+    open_raw = wide(df, "open_raw").reindex(o.index)
+    spread = pd.Series({s: half_spread_usd(s) for s in open_raw.columns}) / open_raw
+    return Market(o, c, per_leg_cost_bps(df).reindex(o.index), pd.DatetimeIndex(o.index), spread)
 
 
 # ----------------------------------------------------------------------------- allocators
@@ -105,7 +109,8 @@ def decision_dates(sessions: pd.DatetimeIndex, start, end) -> pd.DatetimeIndex:
 
 def run(scores: pd.DataFrame | None, mkt: Market, start, end, top_n: int = 10, allocator: str = "equal_weight",
         cost_mult: float = 1.0, max_weight: float = 0.10, vol_target: float | None = None, vol_window: int = 63,
-        fixed_weights: dict | None = None, universe_mask: pd.DataFrame | None = None, flat_cost: float | None = None) -> dict:
+        fixed_weights: dict | None = None, universe_mask: pd.DataFrame | None = None, flat_cost: float | None = None,
+        spread_mult: float = 1.0) -> dict:
     """scores: date x symbol on decision dates (higher = buy). fixed_weights: static benchmark weights.
     universe_mask (date x symbol bool) with scores=None and fixed_weights=None -> equal weight all eligible."""
     S = mkt.sessions
@@ -144,15 +149,24 @@ def run(scores: pd.DataFrame | None, mkt: Market, start, end, top_n: int = 10, a
                 raw = cap_weights(raw, max_weight) if allocator != "equal_weight" else raw
                 target = raw.reindex(syms).fillna(0.0)
             if vol_target is not None:
-                hist = pd.Series(raw_hist[-vol_window:])
+                hist = pd.Series(raw_hist[:-1][-vol_window:])   # drop open(t)->open(t+1): not known at the close of t
                 rv = hist.std() * np.sqrt(252) if len(hist) >= 21 else np.nan
                 scale = min(1.0, vol_target / rv) if np.isfinite(rv) and rv > 0 else 1.0
                 target = target * scale
             assert target.min() >= -1e-12 and target.sum() <= 1 + 1e-9
             tradable = mkt.open_adj.loc[d].notna()
+            stuck = ~tradable & (w > 0)
             target = target.where(tradable, w)              # no trade on a missing bar
+            if target.sum() > 1 + 1e-12:                    # keep gross <= 1: scale the tradable names down
+                free = target[~stuck].sum(); room = 1 - target[stuck].sum()
+                target[~stuck] *= max(room, 0) / free if free > 0 else 0
             dw = (target - w).abs()
-            leg = mkt.cost.loc[d].reindex(syms).fillna(0.0) if flat_cost is None else pd.Series(flat_cost, index=syms)
+            if flat_cost is not None:
+                leg = pd.Series(flat_cost, index=syms)
+            else:
+                leg = mkt.cost.loc[d].reindex(syms).fillna(0.0)
+                if spread_mult != 1.0:
+                    leg = leg + (spread_mult - 1.0) * mkt.spread.loc[d].reindex(syms).fillna(0.0)
             cost_today = float((dw * leg).sum() * cost_mult)
             out_turn[d] = float(dw.sum())
             w = target
@@ -165,10 +179,11 @@ def run(scores: pd.DataFrame | None, mkt: Market, start, end, top_n: int = 10, a
         raw_hist.append(gross / scale if scale > 0 else gross)
         w = w * (1 + r) / (1 + gross) if (1 + gross) != 0 else w
     # out_ret[d] is the open(d)->open(d+1) return; index by d+1 so that it is realised that day
-    idx = pd.DatetimeIndex(out_ret.keys())
-    nxt = pd.DatetimeIndex([S[S.get_loc(x) + 1] if S.get_loc(x) + 1 < len(S) else x + pd.Timedelta(days=1) for x in idx])
-    return {"ret": pd.Series(list(out_ret.values()), index=nxt), "gross": pd.Series(list(out_gross.values()), index=nxt),
-            "turnover": pd.Series(out_turn), "exposure": pd.Series(list(out_exp.values()), index=nxt), "holdings": holdings}
+    # the last session has no next open inside the data: its return is unknown -> dropped (no phantom day)
+    keep = [x for x in out_ret if S.get_loc(x) + 1 < len(S)]
+    nxt = pd.DatetimeIndex([S[S.get_loc(x) + 1] for x in keep])
+    def ser(dct): return pd.Series([dct[x] for x in keep], index=nxt)
+    return {"ret": ser(out_ret), "gross": ser(out_gross), "turnover": pd.Series(out_turn), "exposure": ser(out_exp), "holdings": holdings}
 
 
 def annual_turnover(res: dict) -> float:

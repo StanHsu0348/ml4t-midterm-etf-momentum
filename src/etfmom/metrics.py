@@ -126,6 +126,17 @@ def min_trl_years(sr_ann: float, alpha: float = 0.05, power: float = 0.8) -> flo
     return float(((stats.norm.ppf(1 - alpha) + stats.norm.ppf(power)) / sr_ann) ** 2)
 
 
+def min_trl_bailey(r: pd.Series, sr_star_ann: float = 0.0, alpha: float = 0.05, ppy: int = 252) -> float:
+    """Bailey & Lopez de Prado (2012) minimum track record length, in years."""
+    r = pd.Series(r).dropna()
+    sr = r.mean() / r.std(); sr0 = sr_star_ann / np.sqrt(ppy)
+    if sr <= sr0:
+        return np.inf
+    sk, ku = stats.skew(r), stats.kurtosis(r, fisher=False)
+    n = 1 + (1 - sk * sr + (ku - 1) / 4 * sr ** 2) * (stats.norm.ppf(1 - alpha) / (sr - sr0)) ** 2
+    return float(n / ppy)
+
+
 def drawdown(eq: pd.Series) -> pd.Series:
     return eq / eq.cummax() - 1
 

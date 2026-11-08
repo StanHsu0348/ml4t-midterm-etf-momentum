@@ -54,6 +54,22 @@ def valid_rows(panel: pd.DataFrame, fold: Fold) -> pd.DataFrame:
     return panel.loc[fold.valid_start:fold.valid_end]
 
 
+def purged_end(sessions: pd.DatetimeIndex, boundary: str, horizon_exit: int) -> pd.Timestamp:
+    """Last decision date whose label (exit at open[t+horizon_exit]) ends before `boundary`."""
+    i = sessions.get_loc(sessions[sessions >= pd.Timestamp(boundary)][0])
+    return sessions[i - horizon_exit - 1]
+
+
+def selection_rows(panel: pd.DataFrame, start, boundary: str, sessions: pd.DatetimeIndex) -> pd.DataFrame:
+    """Rows of a selection window (discovery / tuning) purged at its END against the
+    validation boundary: 21d labels exit at open t+22, 63d decay labels at t+64."""
+    d = panel.loc[pd.Timestamp(start):purged_end(sessions, boundary, 22)].copy()
+    late = d.index.get_level_values("date") > purged_end(sessions, boundary, 64)
+    if "fwd_open_ret_63d" in d:
+        d.loc[late, "fwd_open_ret_63d"] = float("nan")
+    return d
+
+
 # ----------------------------------------------------------------------------- target
 def make_target(d: pd.DataFrame, clip: tuple[float, float] | None = None) -> tuple[pd.Series, tuple[float, float]]:
     y = d[LABEL] - d.groupby(level="date")[LABEL].transform("mean")

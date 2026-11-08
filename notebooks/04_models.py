@@ -21,7 +21,7 @@ from etfmom.config import ART, FIG, SEED, TAB, setup
 from etfmom.features import STATES
 from etfmom.ledger import log_run
 from etfmom.metrics import daily_ic, ic_summary, nw_mean
-from etfmom.models import (LABEL, LGBMModel, RidgeModel, RuleModel, ensemble, make_target, train_rows,
+from etfmom.models import (LABEL, LGBMModel, RidgeModel, RuleModel, ensemble, make_target, selection_rows, train_rows,
                            tuning_fold, valid_rows, validation_folds)
 
 plt.style.use("seaborn-v0_8-whitegrid")
@@ -39,7 +39,9 @@ print("signals:", SIGNALS); print("states:", STATES)
 # %%
 tf = tuning_fold(sessions)
 print(tf)
-tr, va = train_rows(panel, tf, sessions), valid_rows(panel, tf)
+tr = train_rows(panel, tf, sessions)
+va = selection_rows(panel, tf.valid_start, f"{S['evaluation']['validation_folds'][0]}-01-01", sessions)  # purged at the 2015 boundary
+print("tuning valid:", va.index.get_level_values("date").min().date(), "..", va.index.get_level_values("date").max().date())
 alpha_rows = []
 for a in S["models"]["ladder"][1]["alpha_grid"]:
     m = RidgeModel(SIGNALS, a).fit(tr)
@@ -153,18 +155,24 @@ per_fold.round(4).to_csv(TAB / "04_ic_per_fold.csv"); per_fold.round(4)
 def paired(a, b):
     d = (ics[a] - ics[b]).dropna(); s = nw_mean(d)
     return {"comparison": f"{a} - {b}", "dIC": s["mean"], "lo": s["lo"], "hi": s["hi"], "p": s["p"]}
-pairs = pd.DataFrame([paired("ridge", "rule"), paired("lgbm", "ridge"), paired("lgbm", "rule"), paired("ensemble", "rule"), paired("ensemble", "lgbm")])
+pairs = pd.DataFrame([paired("ridge", "rule"), paired("lgbm", "ridge"), paired("lgbm", "rule"), paired("ensemble", "rule"), paired("ensemble", "ridge"), paired("ensemble", "lgbm")])
 pairs.round(4).to_csv(TAB / "04_paired.csv", index=False)
-# pre-registered deploy rule: climb only if the paired CI lower bound > 0 vs the best simpler rung
-deployed = "rule"
-if pairs.set_index("comparison").loc["ridge - rule", "lo"] > 0: deployed = "ridge"
-best_simpler = deployed
-if paired("lgbm", best_simpler)["lo"] > 0: deployed = "lgbm"
-if paired("ensemble", deployed)["lo"] > 0 if deployed != "ensemble" else False: deployed = "ensemble"
-print("deployed rung:", deployed)
+# pre-registered deploy rule (setup.yaml models.deploy_rule): deploy the MOST COMPLEX rung whose paired
+# daily-IC difference against the BEST simpler rung (highest validation mean IC) has NW 95% lower bound > 0
+LADDER = ["rule", "ridge", "lgbm", "ensemble"]
+deployed, rule_trace = "rule", []
+for k in reversed(LADDER[1:]):
+    simpler = LADDER[:LADDER.index(k)]
+    best_simpler = max(simpler, key=lambda s: ics[s].mean())
+    lo = paired(k, best_simpler)["lo"]
+    rule_trace.append(f"{k} vs best simpler {best_simpler}: lo={lo:.4f}")
+    if lo > 0:
+        deployed = k
+        break
+print("\n".join(rule_trace)); print("deployed rung:", deployed)
 json.dump({"deployed": deployed}, open(ART / "deployed.json", "w"))
 log_run("model_ladder", "deploy_decision", "walk_forward_2015_2023", {"rule": S["models"]["deploy_rule"]}, "2015-2023",
-        {r.comparison: float(r.dIC) for r in pairs.itertuples()}, f"deploy={deployed}", "paired NW CI lower bound > 0")
+        {**{r.comparison: float(r.dIC) for r in pairs.itertuples()}, "trace": rule_trace}, f"deploy={deployed}", "paired NW CI lower bound > 0 vs best simpler rung")
 pairs.round(4)
 
 # %% [markdown]
