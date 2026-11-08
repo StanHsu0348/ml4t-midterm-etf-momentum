@@ -52,7 +52,7 @@ head = pd.DataFrame([
     ("Costs", "Break-even cost (bp per leg)", f"{val_cost.loc[DEP, 'breakeven_bps_per_leg_vs_cash']:.0f}", f"{ho_inf['breakeven_bps_per_leg']:.0f}", "-"),
     ("Risk overlay", "Net Sharpe / MDD with 10% vol target", f"{val_ov.loc['with vol-target overlay', 'sharpe']:.2f} / {val_ov.loc['with vol-target overlay', 'max_dd']:.1%}",
      f"{ov_h['sharpe']:.2f} / {ov_h['max_dd']:.1%}", "-"),
-    ("Inference", "Deflated Sharpe (trials = N) / min. track record", f"{val_inf['dsr_all_trials']:.2f} (N={val_inf['n_trials_all']}) / {val_inf['min_track_record_years']:.0f} y",
+    ("Inference", "Deflated Sharpe (trials = N) / min. track record", f"{val_inf['dsr_all_trials']:.2f} (N={int(val_inf['n_trials_all'])}) / {val_inf['min_track_record_years']:.0f} y",
      f"{ho_inf['dsr_all_trials']:.2f} (N={ho_inf['n_trials_all']}) / {ho_inf['min_track_record_years']:.0f} y", "-"),
 ], columns=["Stage", "Metric", "Validation 2015-2023", "Holdout 2024-2025", "Benchmark"])
 head.to_csv(TAB / "07_headline.csv", index=False)

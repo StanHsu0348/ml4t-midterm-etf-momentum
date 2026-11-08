@@ -1,0 +1,15 @@
+{
+  "net_sharpe":1.0768116337,
+  "ci_lo":-0.3148590637,
+  "ci_hi":2.4684823311,
+  "psr_vs_0":0.9289240217,
+  "dsr_all_trials":0.1700777498,
+  "n_trials_all":93,
+  "min_track_record_years":5.3319819114,
+  "min_trl_years_bailey_ldp":2.4955539804,
+  "breakeven_bps_per_leg":128.1909090299,
+  "ic_mean":0.0637360057,
+  "ic_lo":-0.0141712266,
+  "ic_hi":0.141643238,
+  "confirmatory_test_passed":true
+}
