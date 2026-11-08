@@ -1,0 +1,32 @@
+{
+  "ridge_alpha": 100000.0,
+  "lgbm_params": {
+    "num_leaves": 13,
+    "max_depth": 3,
+    "learning_rate": 0.0351520319910623,
+    "min_child_samples": 303,
+    "feature_fraction": 0.9568039022798821,
+    "bagging_fraction": 0.9205408783750044,
+    "lambda_l2": 6.114127700025003,
+    "bagging_freq": 1
+  },
+  "lgbm_rounds": 149,
+  "signals": [
+    "mom_252_21",
+    "mom_126_21",
+    "mom_63",
+    "sharpe_126",
+    "sma_ratio_200",
+    "trend_consistency_63",
+    "mom_accel",
+    "skew_63",
+    "amihud_63"
+  ],
+  "states": [
+    "asset_rvol_pct",
+    "mkt_rvol_pct",
+    "mkt_trend",
+    "corr_spy_tlt_63",
+    "xs_disp_21"
+  ]
+}
