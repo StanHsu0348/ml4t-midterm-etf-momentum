@@ -1,0 +1,7 @@
+Level,Check,Result
+Values,Prices only; feature at t uses closes <= t (truncation test in 03),PASS
+Values,"Non-price data (fundamentals, macro, text)",N/A (none used in v1)
+Values,Adjusted prices are back-adjusted with *future* dividends; returns are invariant but levels are not -> levels never used in dollars,PASS (dollar quantities use raw prices)
+Universe,Eligibility computed from history length and trailing 63d median $ADV at t,PASS
+Universe,Leavers included (closed/merged ETFs),FAIL - list chosen in 2025; 0 leavers in sample (survivorship bias)
+Identifiers,Ticker changes / reuse handled with effective dates,PASS (no ticker changes among the 100 symbols in 2006-2023; tickers checked against listing dates)

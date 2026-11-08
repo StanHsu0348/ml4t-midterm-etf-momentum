@@ -62,8 +62,17 @@ def download(symbols: list[str] | None = None) -> pd.DataFrame:
         "open_raw": df["open"], "close_raw": df["close"],
         "volume": df["volume"].astype("float64"), "adj_factor": factor,
     }).sort_values(["symbol", "date"]).reset_index(drop=True)
-    out.to_parquet(PANEL_PATH, index=False)
     act = pd.concat(actions, ignore_index=True) if actions else pd.DataFrame(columns=["date", "value", "symbol", "kind"])
+    # Yahoo's "Close" is split-adjusted (not dividend-adjusted). Rebuild the price that
+    # actually traded: multiply by every split ratio whose ex-date is AFTER the session.
+    out["split_factor"] = 1.0
+    for _, a in act[act.kind == "split"].iterrows():
+        m = (out.symbol == a.symbol) & (out.date < a.date)
+        out.loc[m, "split_factor"] *= float(a.value)
+    out["open_raw"] *= out["split_factor"]
+    out["close_raw"] *= out["split_factor"]
+    out["volume_raw"] = out["volume"] / out["split_factor"]
+    out.to_parquet(PANEL_PATH, index=False)
     act.to_parquet(ACTIONS_PATH, index=False)
     from .ledger import file_sha
     meta = {
@@ -71,7 +80,8 @@ def download(symbols: list[str] | None = None) -> pd.DataFrame:
         "downloaded_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "request": {"start": s["start"], "end_inclusive": s["end"], "auto_adjust": False},
         "timestamp_semantics": "date = NYSE session date; open/close = official session open/close (09:30/16:00 ET)",
-        "adjustment": "adjusted = raw * adj_close/close (Yahoo split + dividend back-adjustment)",
+        "adjustment": "adjusted OHLC = yahoo OHLC * adj_close/close (split + dividend back-adjusted, for returns); "
+                      "open_raw/close_raw = yahoo split-adjusted price * future split ratios (price that traded, for dollars)",
         "rows": int(len(out)), "symbols": int(out.symbol.nunique()),
         "sha256_12": file_sha(PANEL_PATH),
     }
@@ -88,10 +98,25 @@ def _read() -> pd.DataFrame:
     return df
 
 
-def load_panel() -> pd.DataFrame:
+def clean(df: pd.DataFrame) -> pd.DataFrame:
+    """Flag-and-exclude (never forward-fill): rows with an OHLC invariant violation,
+    a non-positive price or zero volume get NaN prices, so they can neither be
+    traded nor enter a feature or label."""
+    tol = 1e-6
+    bad = ((df.high < df.low * (1 - tol)) | (df.open > df.high * (1 + tol)) | (df.open < df.low * (1 - tol))
+           | (df.close > df.high * (1 + tol)) | (df.close < df.low * (1 - tol))
+           | (df[["open", "high", "low", "close"]] <= 0).any(axis=1) | (df.volume == 0))
+    df = df.copy()
+    df.loc[bad, ["open", "high", "low", "close", "open_raw", "close_raw"]] = np.nan
+    df["flagged"] = bad
+    return df
+
+
+def load_panel(raw: bool = False) -> pd.DataFrame:
     """Development data ONLY: every row with date >= holdout start is removed."""
     df = _read()
-    return df[df.date <= dev_end()].reset_index(drop=True)
+    df = df[df.date <= dev_end()].reset_index(drop=True)
+    return df if raw else clean(df)
 
 
 def load_panel_with_holdout(reason: str, allow_rerun: bool = False) -> pd.DataFrame:
@@ -112,7 +137,7 @@ def load_panel_with_holdout(reason: str, allow_rerun: bool = False) -> pd.DataFr
         f.write(f"{datetime.now().isoformat(timespec='seconds')} | touch #{len(prior) + 1} | "
                 f"spec={spec.get('spec_hash')} | rerun={allow_rerun} | {reason}\n")
     df = _read()
-    return df[df.date <= holdout_window()[1]].reset_index(drop=True)
+    return clean(df[df.date <= holdout_window()[1]].reset_index(drop=True))
 
 
 def wide(df: pd.DataFrame, col: str) -> pd.DataFrame:
@@ -128,7 +153,7 @@ def eligibility(df: pd.DataFrame) -> pd.DataFrame:
     """Boolean (date x symbol): eligible at close of each date using data <= date."""
     u = setup()["universe"]["eligibility"]
     close = wide(df, "close")
-    dv = wide(df, "close_raw") * wide(df, "volume")
+    dv = wide(df, "close_raw") * wide(df, "volume_raw")
     hist = close.notna().cumsum()
     adv = dv.rolling(u["adv_window_days"], min_periods=u["adv_window_days"] // 2).median()
     return (hist >= u["min_history_days"]) & (adv >= u["min_median_dollar_volume_usd"]) & close.notna()

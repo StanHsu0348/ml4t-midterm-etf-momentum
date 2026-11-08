@@ -1,0 +1,35 @@
+{
+  "meta":{
+    "vendor":"Yahoo Finance via yfinance",
+    "yfinance_version":"1.8.0",
+    "downloaded_at_utc":"2026-11-08T15:19:25+00:00",
+    "request":{
+      "start":"2006-01-01",
+      "end_inclusive":"2025-12-31",
+      "auto_adjust":false
+    },
+    "timestamp_semantics":"date = NYSE session date; open\/close = official session open\/close (09:30\/16:00 ET)",
+    "adjustment":"adjusted OHLC = yahoo OHLC * adj_close\/close (split + dividend back-adjusted, for returns); open_raw\/close_raw = yahoo split-adjusted price * future split ratios (price that traded, for dollars)",
+    "rows":470662,
+    "symbols":100,
+    "sha256_12":"e85bda8973a2"
+  },
+  "cross_check":{
+    "symbols":99,
+    "sessions":4529,
+    "share_abs_diff_gt_10bp":0.0,
+    "median_abs_diff_bp":0.0016729557
+  },
+  "eligible_per_month":{
+    "count":216.0,
+    "mean":78.4,
+    "std":23.0,
+    "min":0.0,
+    "25%":74.0,
+    "50%":87.0,
+    "75%":93.0,
+    "max":96.0
+  },
+  "flagged_rows":158,
+  "interior_missing_sessions":0
+}

@@ -1,0 +1,10 @@
+,violations,share_%
+high<low,0,0.0
+open>high,0,0.0
+open<low,0,0.0
+close>high,0,0.0
+close<low,0,0.0
+price<=0,0,0.0
+volume==0,158,0.0376
+nan_ohlc,0,0.0
+"duplicate (symbol,date)",0,0.0
