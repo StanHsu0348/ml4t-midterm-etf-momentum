@@ -1,0 +1,7 @@
+Component,Specification
+Signal timing,t 收盤產生分數 → t+1 開盤成交（延遲 1 交易日）；同根 K 棒成交視為 lookahead
+Rebalance & holding,月頻；持有至下次再平衡開盤（≈ 21 交易日 = 標籤期間）
+Position sizing,前 10 名等權、單檔上限 10%（配置比較：前 20 名、上限 10%）
+Fill assumptions,以開盤價全額成交（ADV ≥ $10M，部位遠小於成交量，不模擬部分成交）；該日無有效價格則不交易、保留原權重
+Constraints,只做多、滿倉、槓桿 ≤ 1，於模擬迴圈內每次再平衡檢查；缺價保留舊權重時其他標的同比例縮減
+Costs,每股 $0.0035 + 分級半價差，以未調整開盤價換算；掃描 0–8 倍；壓力測試價差 × 3

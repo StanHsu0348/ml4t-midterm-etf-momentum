@@ -216,7 +216,7 @@ box(s, 7.3, 1.95, 5.45, 4.65, fill=TINT)
 b = tri.set_index("feature").loc["beta_spy_126"]
 text(s, 7.6, 2.15, 4.9, 4.3, [[("最強的特徵被我 STOP 了", {"bold": True, "size": 18, "color": RED})],
      f"beta_spy_126：IC {b.ic_mean:.3f}　[{b.ic_lo:.3f}, {b.ic_hi:.3f}]",
-     "顯著，但方向和「betting-against-beta」機制相反。",
+     "NW 區間不含 0（BH 後不顯著），但方向和「betting-against-beta」機制相反。",
      "看了資料才把方向反過來，就等於一個新假說 → 留給 v2。",
      [("機制檢驗（discovery）：", {"bold": True}), ("高波動三分位的動能 IC 並沒有比較低 → 開關未獲支持。", {})]], size=15, spacing=10)
 footer(s, 5)
@@ -257,7 +257,7 @@ s.notes_slide.notes_text_frame.text = ("規則的 IC 信賴區間含 0；LightGB
 
 # ---------------------------------------------------------------- 7 headline table
 s = new(); title(s, "總表：驗證期與 holdout 並列", f"確認檢定（IC > 0 且淨 Sharpe > 0）：{'通過' if ho_inf['confirmatory_test_passed'] else '未通過'}，但兩個信賴區間都含 0")
-rows_keep = [0, 2, 4, 5, 6, 7]
+rows_keep = [0, 1, 2, 3, 4, 5, 8]
 tbl = s.shapes.add_table(len(rows_keep) + 1, 4, Inches(0.6), Inches(1.95), Inches(12.1), Inches(4.4)).table
 widths = [1.6, 3.9, 3.3, 3.3]
 for j, w in enumerate(widths):
@@ -281,12 +281,12 @@ s.notes_slide.notes_text_frame.text = ("總表依四個關卡加統計推論排�
     "DSR 在 93 次試驗下只有 0.17。最下面那行很重要：holdout 裡規則、等權、60/40 都比部署模型好。")
 
 # ---------------------------------------------------------------- 8 equity figure
-s = new(); title(s, "扣成本後：驗證期領先，holdout 被規則追上", "圖 1　淨值曲線（log），黑線為驗證／holdout 分界")
+s = new(); title(s, "扣成本後：驗證期領先，holdout 中規則縮小差距", "圖 1　淨值曲線（log），黑線為驗證／holdout 分界")
 s.shapes.add_picture(str(FIG / "07_fig1_equity.png"), Inches(0.6), Inches(1.85), width=Inches(8.6))
 box(s, 9.5, 1.95, 3.25, 4.6, fill=TINT)
 text(s, 9.75, 2.15, 2.8, 4.3, [[("怎麼讀", {"bold": True, "size": 17, "color": TEAL})],
      f"驗證期淨 Sharpe：部署 {val_perf.loc['deployed_lgbm', 'net_sharpe']:.2f}、規則 {val_perf.loc['rule_mom_252_21', 'net_sharpe']:.2f}、60/40 {val_perf.loc['60/40 SPY/AGG', 'net_sharpe']:.2f}",
-     "整段累積報酬最高，但領先全部來自驗證期。",
+     "整段累積 +219% vs 規則 +190%；但 holdout 規則 +56% vs 部署 +39%。",
      f"對 SPY 的 beta ≈ 0.90：大部分報酬是美股多頭。"], size=15, spacing=10)
 footer(s, 8)
 s.notes_slide.notes_text_frame.text = ("這張圖回答：部署模型扣成本後有沒有贏？驗證期贏規則與等權，但輸 60/40；holdout 被規則追上。"
@@ -297,8 +297,8 @@ s = new(); title(s, "穩定性與路徑風險", "圖 2　63 日滾動 IC　·　
 s.shapes.add_picture(str(FIG / "07_fig2_rolling_ic.png"), Inches(0.6), Inches(1.85), width=Inches(6.0))
 s.shapes.add_picture(str(FIG / "07_fig6_drawdown.png"), Inches(6.75), Inches(1.85), width=Inches(6.0))
 text(s, 0.6, 4.25, 6.0, 2.4, [[("訊號會翻號", {"bold": True, "size": 16, "color": TEAL})],
-     "2016、2018、2023 有負的區段；holdout 大致為正，2025 上半例外。",
-     [("機制在驗證期得到支持：", {"bold": True}), (f"平靜 IC {mech.loc['calm', 'mean']:.3f}，壓力 {mech.loc['stressed', 'mean']:.3f}", {})]], size=14, spacing=8)
+     "2016、2018、2022、2023 有較長的負區段；holdout 大致為正，2025 年例外。",
+     [("機制在驗證期得到支持：", {"bold": True}), (f"平靜 IC {mech.loc['calm', 'mean']:.3f}，壓力 {round(mech.loc['stressed', 'mean'] - 1e-12, 3):.3f}", {})]], size=14, spacing=8)
 text(s, 6.75, 4.25, 6.0, 2.4, [[("停損階梯什麼時候觸發", {"bold": True, "size": 16, "color": TEAL})],
      "20% 平倉只在 2020 年 3 月觸發（最大回撤 −29.9%，114 日回到前高）。",
      "holdout 最深 −19.9%（2025 年 4 月），差一點觸發。"], size=14, spacing=8)
@@ -307,7 +307,7 @@ s.notes_slide.notes_text_frame.text = ("左圖：IC 的平均值會掩蓋翻號�
     "但 discovery 期相反，所以我的結論是『未定』。右圖：回撤加上停損門檻線。")
 
 # ---------------------------------------------------------------- 10 diagnosis + next step
-s = new(dark=True); title(s, "診斷：價值流失在投組轉換，不在訊號或成本", "Ch. 20 型態：方向維持，但 holdout 區間跨 0", dark=True)
+s = new(dark=True); title(s, "診斷：價值流失在投組轉換，不在訊號或成本", "Ch. 20 型態：never resolved（兩段淨 Sharpe 區間都跨 0）", dark=True)
 gates = [("訊號", f"holdout IC {ho_inf['ic_mean']:.3f}\n仍高於規則", TEAL, "過"), ("投組", f"淨 Sharpe {ho_inf['net_sharpe']:.2f}\n< 規則 {ho_perf.loc['rule_mom_252_21', 'net_sharpe']:.2f}", RED, "敗"),
          ("成本", f"兩平 {ho_inf['breakeven_bps_per_leg']:.0f} bp/腿\n假設約 3.4 bp", TEAL, "過"), ("推論", f"DSR {ho_inf['dsr_all_trials']:.2f}\n（N = {int(ho_inf['n_trials_all'])}）", RED, "敗")]
 for i, (g, d, col, mark) in enumerate(gates):
@@ -320,7 +320,7 @@ text(s, 0.6, 4.55, 12.1, 0.5, [[("Portfolio-translation drift：", {"bold": True
      ("IC 穩定、Sharpe 下降。換手 14×/年、前 10 名集中，在全面多頭裡把小幅 IC 優勢吃掉。", {"color": WHITE, "size": 17})]])
 box(s, 0.6, 5.3, 12.1, 1.35, fill=AMBER)
 text(s, 0.9, 5.42, 11.5, 1.15, [[("唯一的下一步（setup v2）：", {"bold": True, "size": 18, "color": INK})],
-     [("分數做 3 個月平滑＋no-trade band，把換手壓到 ≈ 6–7×/年，用同一協定重測投組關卡；不再調模型參數，也不投入資金。", {"size": 16, "color": INK})]], spacing=4)
+     [("分數先做 3 個月指數平滑再取前 10 名，把換手壓到 ≈ 6–7×/年，用同一協定重測投組關卡；不再調模型參數，也不投入資金。", {"size": 16, "color": INK})]], spacing=4)
 footer(s, 10, dark=True)
 s.notes_slide.notes_text_frame.text = ("用 Chapter 20 的四個關卡看：訊號關過了、成本關過了，掉在投組關與統計推論。"
     "這是 portfolio-translation drift。下一步只有一個：降低換手、重測投組關；這是映射規則的改變，所以是 v2，需要新的 holdout。")

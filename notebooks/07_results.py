@@ -13,7 +13,8 @@ import numpy as np
 import pandas as pd
 
 from etfmom.config import ART, FIG, TAB, setup
-from etfmom.metrics import daily_ic, ic_summary, sharpe
+from etfmom.metrics import daily_ic, ic_summary, sharpe, sharpe_ci
+from scipy import stats
 from etfmom.models import LABEL
 
 plt.style.use("seaborn-v0_8-whitegrid")
@@ -31,6 +32,8 @@ val_ov = pd.read_csv(TAB / "05_overlay.csv", index_col=0)
 vr = pd.read_parquet(ART / "validation_returns.parquet"); hr = pd.read_parquet(ART / "holdout_returns.parquet")
 vg = pd.read_parquet(ART / "validation_gross.parquet"); hg = pd.read_parquet(ART / "holdout_gross.parquet")
 ho_ic_d = ho_ic.loc[dep]
+assert DEP in val_perf.index, (f"validation tables were regenerated with a different deployed rung than the frozen spec "
+                               f"({DEP} missing): restore results/ with `git checkout results/` or rerun 06 after a new freeze")
 
 # %% [markdown]
 # ## Headline table (validation vs holdout vs benchmark)
@@ -40,18 +43,26 @@ def ci(m, lo, hi, d=3):
     return f"{m:.{d}f} [{lo:.{d}f}, {hi:.{d}f}]"
 from etfmom.metrics import perf_summary
 ov_h = perf_summary(hr["deployed + vol target"])
+BMS = (("EW", "EW_all_eligible"), ("60/40", "60/40 SPY/AGG"), ("SPY", "SPY"))
+def bm(tab, col, f):
+    if col is None:   # max drawdown / turnover
+        return " · ".join(f"{n} {tab.loc[k, 'max_dd']:.1%}/{tab.loc[k, 'turnover_2way_ann']:.2f}x" for n, k in BMS)
+    return " · ".join(f"{n} {f.format(tab.loc[k, col])}" for n, k in BMS)
 head = pd.DataFrame([
     ("Signal", "Daily IC [NW 95% CI]", ci(val_ic.loc[dep, "IC"], val_ic.loc[dep, "CI_lo"], val_ic.loc[dep, "CI_hi"]), ci(ho_ic_d["mean"], ho_ic_d["lo"], ho_ic_d["hi"]), "-"),
     ("Signal", "ICIR (daily) / share of positive folds", f"{val_ic.loc[dep, 'ICIR(daily)']:.3f} / {val_ic.loc[dep, 'share_pos_folds']:.2f}", f"{ho_ic_d['icir_daily']:.3f} / {ho_ic_d['share_pos_folds']:.2f}", "-"),
-    ("Portfolio", "Gross Sharpe", f"{val_perf.loc[DEP, 'gross_sharpe']:.2f}", f"{ho_perf.loc[DEP, 'gross_sharpe']:.2f}",
-     f"EW {val_perf.loc['EW_all_eligible', 'net_sharpe']:.2f} · 60/40 {val_perf.loc['60/40 SPY/AGG', 'net_sharpe']:.2f} · SPY {val_perf.loc['SPY', 'net_sharpe']:.2f} (val)"),
+    ("Portfolio", "Gross Sharpe [95% CI]", ci(*[sharpe_ci(vg[DEP])[k] for k in ("sr", "lo", "hi")], 2), ci(*[sharpe_ci(hg[DEP])[k] for k in ("sr", "lo", "hi")], 2),
+     "val: " + bm(val_perf, "gross_sharpe", "{:.2f}") + "; holdout: " + bm(ho_perf, "gross_sharpe", "{:.2f}")),
     ("Portfolio", "Max drawdown / 2-way turnover p.a.", f"{val_perf.loc[DEP, 'max_dd']:.1%} / {val_perf.loc[DEP, 'turnover_2way_ann']:.1f}x", f"{ho_perf.loc[DEP, 'max_dd']:.1%} / {ho_perf.loc[DEP, 'turnover_2way_ann']:.1f}x",
-     f"EW {ho_perf.loc['EW_all_eligible', 'net_sharpe']:.2f} · 60/40 {ho_perf.loc['60/40 SPY/AGG', 'net_sharpe']:.2f} · SPY {ho_perf.loc['SPY', 'net_sharpe']:.2f} (holdout)"),
+     "val: " + bm(val_perf, None, None) + "; holdout: " + bm(ho_perf, None, None)),
     ("Costs", "Net Sharpe [95% CI] at assumed cost", ci(val_perf.loc[DEP, "net_sharpe"], val_perf.loc[DEP, "net_sr_lo"], val_perf.loc[DEP, "net_sr_hi"], 2),
-     ci(ho_perf.loc[DEP, "net_sharpe"], ho_perf.loc[DEP, "net_sr_lo"], ho_perf.loc[DEP, "net_sr_hi"], 2), "-"),
+     ci(ho_perf.loc[DEP, "net_sharpe"], ho_perf.loc[DEP, "net_sr_lo"], ho_perf.loc[DEP, "net_sr_hi"], 2),
+     "val: " + bm(val_perf, "net_sharpe", "{:.2f}") + "; holdout: " + bm(ho_perf, "net_sharpe", "{:.2f}")),
     ("Costs", "Break-even cost (bp per leg)", f"{val_cost.loc[DEP, 'breakeven_bps_per_leg_vs_cash']:.0f}", f"{ho_inf['breakeven_bps_per_leg']:.0f}", "-"),
     ("Risk overlay", "Net Sharpe / MDD with 10% vol target", f"{val_ov.loc['with vol-target overlay', 'sharpe']:.2f} / {val_ov.loc['with vol-target overlay', 'max_dd']:.1%}",
      f"{ov_h['sharpe']:.2f} / {ov_h['max_dd']:.1%}", "-"),
+    ("Inference", "Skew / kurtosis of daily net returns", f"{val_inf['skew']:.2f} / {val_inf['kurtosis']:.1f}",
+     f"{stats.skew(hr[DEP].dropna()):.2f} / {stats.kurtosis(hr[DEP].dropna(), fisher=False):.1f}", "-"),
     ("Inference", "Deflated Sharpe (trials = N) / min. track record", f"{val_inf['dsr_all_trials']:.2f} (N={int(val_inf['n_trials_all'])}) / {val_inf['min_track_record_years']:.0f} y",
      f"{ho_inf['dsr_all_trials']:.2f} (N={ho_inf['n_trials_all']}) / {ho_inf['min_track_record_years']:.0f} y", "-"),
 ], columns=["Stage", "Metric", "Validation 2015-2023", "Holdout 2024-2025", "Benchmark"])
@@ -59,16 +70,16 @@ head.to_csv(TAB / "07_headline.csv", index=False)
 head
 
 # %%
-v_ok = val_ic.loc[dep, "CI_lo"] > 0
+# Chapter 20's five patterns, applied to the net Sharpe interval (the strategy-level evidence)
 h_ic, h_sr, v_sr = ho_ic_d["mean"], ho_perf.loc[DEP, "net_sharpe"], val_perf.loc[DEP, "net_sharpe"]
+v_span = val_perf.loc[DEP, "net_sr_lo"] <= 0 <= val_perf.loc[DEP, "net_sr_hi"]
+h_span = ho_perf.loc[DEP, "net_sr_lo"] <= 0 <= ho_perf.loc[DEP, "net_sr_hi"]
 if h_ic <= 0 or h_sr <= 0:
     pattern = "decay or sign flip"
-elif not v_ok and ho_ic_d["lo"] <= 0:
+elif v_span and h_span:
     pattern = "never resolved"
-elif h_sr >= v_sr and ho_ic_d["lo"] > 0:
+elif h_sr >= v_sr:
     pattern = "strengthen"
-elif ho_ic_d["lo"] <= 0 or ho_perf.loc[DEP, "net_sr_lo"] <= 0:
-    pattern = "hold (direction), but holdout interval spans zero"
 else:
     pattern = "hold"
 print("Chapter-20 pattern:", pattern, "| confirmatory test passed:", ho_inf["confirmatory_test_passed"])

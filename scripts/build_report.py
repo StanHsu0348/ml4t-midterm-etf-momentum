@@ -22,6 +22,8 @@ SRC = ROOT / "report" / sys.argv[1] if len(sys.argv) > 1 else ROOT / "report" / 
 
 
 def fmt_cell(v):
+    if isinstance(v, str):
+        return v.replace("|", "\\|")
     if isinstance(v, float):
         if abs(v) >= 100:
             return f"{v:,.0f}"
@@ -51,11 +53,11 @@ def jval(spec: str) -> str:
 
 CSS = """
 @page { size: A4; margin: 16mm 15mm 16mm 15mm; }
-body { font-family: "PingFang TC", "Heiti TC", "Noto Sans CJK TC", sans-serif; font-size: 10.5pt; line-height: 1.6; color: #1a1a1a; }
+body { font-family: "PingFang TC", "Heiti TC", "Noto Sans CJK TC", sans-serif; font-size: 10pt; line-height: 1.5; color: #1a1a1a; }
 h1 { font-size: 17pt; margin: 0 0 4pt; } h2 { font-size: 13pt; border-bottom: 1.5px solid #333; padding-bottom: 2pt; margin-top: 14pt; }
 h3 { font-size: 11pt; margin: 10pt 0 3pt; } p { margin: 4pt 0; }
-table { border-collapse: collapse; width: 100%; font-size: 8.3pt; margin: 5pt 0; page-break-inside: avoid; }
-th, td { border: 1px solid #bbb; padding: 2pt 4pt; text-align: left; vertical-align: top; } th { background: #eef2f6; }
+table { border-collapse: collapse; width: 100%; font-size: 7.4pt; line-height: 1.25; margin: 4pt 0; } tr { page-break-inside: avoid; }
+th, td { border: 1px solid #bbb; padding: 1pt 3pt; text-align: left; vertical-align: top; } th { background: #eef2f6; }
 img { max-width: 100%; display: block; margin: 4pt auto; page-break-inside: avoid; }
 .fig { text-align: center; font-size: 8.5pt; color: #444; margin-bottom: 6pt; page-break-inside: avoid; }
 .break { page-break-before: always; } .wcb { background: #fff6e6; border-left: 3px solid #e6a23c; padding: 4pt 8pt; margin: 6pt 0; font-size: 9pt; }
@@ -71,7 +73,8 @@ if __name__ == "__main__":
     html = f"<!doctype html><html lang='zh-Hant'><head><meta charset='utf-8'><title>{SRC.stem}</title><style>{CSS}</style></head><body>{body}</body></html>"
     out = SRC.with_suffix(".html")
     out.write_text(html)
-    chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    import os
+    chrome = os.environ.get("CHROME", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
     if Path(chrome).exists():
         pdf = SRC.with_suffix(".pdf")
         subprocess.run([chrome, "--headless=new", "--disable-gpu", "--no-pdf-header-footer", f"--print-to-pdf={pdf}", out.as_uri()],

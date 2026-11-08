@@ -4,5 +4,5 @@ __pycache__/
 data/raw/
 .ipynb_checkpoints/
 .DS_Store
-results/artifacts/*.parquet
+results/artifacts/panel_dev.parquet
 results/artifacts/*.pkl

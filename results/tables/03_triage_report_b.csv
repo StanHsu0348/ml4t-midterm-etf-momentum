@@ -1,0 +1,18 @@
+feature,placebo IC (lag 21),quintile mono.,Q5−Q1 bp/mo,top-quintile turnover/mo,cost bp/mo,decision,reason
+mom_252_21,0.045,1.0,42.0,0.231,4.0,REVISE,slow state proxy (placebo survives); CI includes 0 / not BH-significant
+mom_126_21,0.0014,0.7,42.0,0.3402,6.0,REVISE,non-monotone quintiles; CI includes 0 / not BH-significant
+mom_63,0.0343,0.8,78.0,0.4339,8.0,REVISE,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+volscaled_mom_252_21,0.0362,0.4,51.0,0.2215,4.0,STOP,duplicate of mom_252_21 (|rho|>=0.8)
+sharpe_126,0.0084,0.7,28.0,0.3121,6.0,REVISE,non-monotone quintiles; CI includes 0 / not BH-significant
+dist_52w_high,0.011,0.9,39.0,0.4159,8.0,STOP,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+sma_ratio_200,0.0398,0.9,55.0,0.3079,6.0,REVISE,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+trend_consistency_63,0.0431,0.9,65.0,0.4334,8.0,REVISE,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+mom_accel,0.0393,0.9,61.0,0.5631,10.0,REVISE,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+rev_21,0.0185,-0.6,-51.0,0.7428,14.0,STOP,sign opposite to mechanism; no stable support
+rev_5,0.0298,1.0,83.0,0.746,14.0,STOP,sign opposite to mechanism; no stable support
+vol_63,0.0524,-0.3,-12.0,0.0837,2.0,STOP,sign opposite to mechanism; no stable support
+beta_spy_126,0.1007,-1.0,-81.0,0.0515,1.0,STOP,sign opposite to mechanism; no stable support
+max_ret_21,0.0502,-0.6,-20.0,0.2146,4.0,STOP,duplicate of vol_63 (|rho|>=0.8)
+skew_63,-0.0243,0.7,28.0,0.4651,9.0,REVISE,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+amihud_63,0.0258,0.5,37.0,0.1215,2.0,REVISE,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+volume_trend_21_126,-0.0301,0.3,18.0,0.5527,10.0,STOP,sign opposite to mechanism; no stable support
