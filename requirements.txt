@@ -88,6 +88,7 @@ lightgbm==4.7.0
     # via etfmom
 lxml==6.1.3
     # via
+    #   python-docx
     #   python-pptx
     #   yfinance
 mako==1.4.3
@@ -202,6 +203,8 @@ python-dateutil==4.0.0
     #   jupyter-client
     #   matplotlib
     #   pandas
+python-docx==1.2.0
+    # via etfmom
 python-pptx==1.0.2
     # via etfmom
 pytz==2026.6
@@ -276,6 +279,7 @@ typing-extensions==4.16.0
     #   beautifulsoup4
     #   formulaic
     #   jupyter-client
+    #   python-docx
     #   python-pptx
     #   referencing
     #   sqlalchemy
