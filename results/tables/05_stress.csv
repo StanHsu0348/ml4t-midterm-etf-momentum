@@ -1,11 +1,11 @@
 episode,strategy,return,max_dd
-covid_2020,deployed (3x costs),-0.1553,-0.3153
-covid_2020,deployed + overlay (3x),-0.1429,-0.2025
-covid_2020,rule (3x costs),-0.0979,-0.2954
+covid_2020,deployed (3x spreads),-0.1526,-0.2992
+covid_2020,deployed + overlay (3x spreads),-0.1482,-0.2044
+covid_2020,rule (3x spreads),-0.0978,-0.2953
 covid_2020,60/40,-0.0614,-0.2144
 covid_2020,SPY,-0.128,-0.3205
-rate_shock_2022,deployed (3x costs),-0.1662,-0.2412
-rate_shock_2022,deployed + overlay (3x),-0.0987,-0.1365
-rate_shock_2022,rule (3x costs),0.0957,-0.1971
+rate_shock_2022,deployed (3x spreads),-0.0988,-0.1859
+rate_shock_2022,deployed + overlay (3x spreads),-0.057,-0.102
+rate_shock_2022,rule (3x spreads),0.0965,-0.197
 rate_shock_2022,60/40,-0.1653,-0.2188
 rate_shock_2022,SPY,-0.1781,-0.2629

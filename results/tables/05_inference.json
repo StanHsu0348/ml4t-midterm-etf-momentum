@@ -1,14 +1,15 @@
 {
-  "net_sharpe":0.6004086168,
-  "ci_lo":-0.0537354272,
-  "ci_hi":1.2545526608,
-  "psr_vs_0":0.9615712429,
-  "dsr_all_trials":0.2417086254,
-  "n_trials_all":95.0,
-  "sr0_all":0.8382405637,
-  "dsr_strategy_trials":0.5377136823,
-  "n_trials_strategy":13.0,
-  "skew":-0.805529336,
-  "kurtosis":11.5094356381,
-  "min_track_record_years":17.1504023257
+  "net_sharpe":0.6342642627,
+  "ci_lo":-0.0200514083,
+  "ci_hi":1.2885799337,
+  "psr_vs_0":0.9689715442,
+  "dsr_all_trials":0.2765222571,
+  "n_trials_all":93.0,
+  "sr0_all":0.8359098239,
+  "dsr_strategy_trials":0.6677076715,
+  "n_trials_strategy":8.0,
+  "skew":-0.8188826158,
+  "kurtosis":12.2202726634,
+  "min_track_record_years":15.3683648168,
+  "min_trl_years_bailey_ldp":6.9794629602
 }

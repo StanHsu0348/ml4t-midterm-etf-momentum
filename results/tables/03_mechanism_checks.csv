@@ -1,4 +1,4 @@
 feature,ic,placebo_lag5,placebo_lag21,ic_after_beta_group_control,ic_calm,ic_mid,ic_stressed,event_time
-trend_consistency_63,0.0553,0.0546,0.0433,0.0264,0.0552,0.0657,0.044,N/A (not event-based)
-amihud_63,0.0246,0.0241,0.0241,0.0302,0.0097,0.068,-0.0046,N/A (not event-based)
-mom_63,0.0618,0.0605,0.0365,0.0123,0.0769,0.0496,0.0073,N/A (not event-based)
+trend_consistency_63,0.0547,0.054,0.0431,0.0251,0.0528,0.0693,0.044,N/A (not event-based)
+amihud_63,0.0264,0.0259,0.0258,0.0303,0.0119,0.07,-0.0046,N/A (not event-based)
+mom_63,0.059,0.0576,0.0343,0.0094,0.0728,0.049,0.0073,N/A (not event-based)

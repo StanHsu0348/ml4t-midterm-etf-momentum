@@ -1,16 +1,16 @@
 {
   "ridge_alpha": 100000.0,
   "lgbm_params": {
-    "num_leaves": 13,
+    "num_leaves": 12,
     "max_depth": 3,
-    "learning_rate": 0.0351520319910623,
-    "min_child_samples": 303,
-    "feature_fraction": 0.9568039022798821,
-    "bagging_fraction": 0.9205408783750044,
-    "lambda_l2": 6.114127700025003,
+    "learning_rate": 0.011641142127508471,
+    "min_child_samples": 562,
+    "feature_fraction": 0.9278790092288136,
+    "bagging_fraction": 0.9307466578040249,
+    "lambda_l2": 1.841177172308202,
     "bagging_freq": 1
   },
-  "lgbm_rounds": 149,
+  "lgbm_rounds": 295,
   "signals": [
     "mom_252_21",
     "mom_126_21",
