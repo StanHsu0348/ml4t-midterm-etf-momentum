@@ -1,0 +1,13 @@
+state,tercile,ic_mean,ic_lo,ic_hi,days
+mkt_rvol_pct,low,0.0936,0.0173,0.1698,1124
+mkt_rvol_pct,mid,-0.0264,-0.1659,0.1131,467
+mkt_rvol_pct,high,0.0842,-0.0796,0.248,151
+mkt_trend,low,-0.0332,-0.1843,0.1179,391
+mkt_trend,mid,0.0707,-0.0189,0.1603,668
+mkt_trend,high,0.1044,0.0019,0.2069,683
+corr_spy_tlt_63,low,0.0691,-0.015,0.1532,845
+corr_spy_tlt_63,mid,0.0638,-0.0428,0.1705,422
+corr_spy_tlt_63,high,0.0426,-0.0979,0.1832,475
+xs_disp_21,low,0.0923,0.0074,0.1773,778
+xs_disp_21,mid,0.0752,-0.0081,0.1585,589
+xs_disp_21,high,-0.0281,-0.1746,0.1183,375

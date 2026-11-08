@@ -1,0 +1,11 @@
+item,value
+label,fwd_open_ret_21d
+type,fixed-horizon continuous return
+execution anchor,"fill at open t+1, exit at open t+22"
+horizon,21 sessions
+mean |close-close - open-open| per obs (bp),85
+IC(mom_252_21) close-to-close label,0.0608
+IC(mom_252_21) next-open label,0.0594
+nominal obs (dev),"352,620"
+effective obs ~ nominal / horizon,"16,791"
+"effective IC days (Bartlett, discovery)",86

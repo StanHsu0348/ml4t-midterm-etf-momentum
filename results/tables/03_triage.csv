@@ -1,0 +1,18 @@
+feature,expected_sign,ic_mean,ic_lo,ic_hi,p_nw,icir_daily,same_sign_years,ic_5d,ic_21d,ic_63d,placebo_ic_lag21,quintile_monotonicity,q5_q1_spread_month,turnover_month,cost_month,duplicate_of,bh_sig,effect_d,decision,reason
+mom_252_21,1,0.0594,-0.0082,0.127,0.085,0.151,0.7143,0.0466,0.0594,0.0344,0.0476,1.0,0.0043,0.2302,0.0004,,False,0.5066,REVISE,slow state proxy (placebo survives); CI includes 0 / not BH-significant
+mom_126_21,1,0.0301,-0.0328,0.0931,0.3481,0.0806,0.7143,0.0341,0.0301,-0.0033,0.0061,0.7,0.0043,0.3388,0.0006,,False,0.2569,REVISE,non-monotone quintiles; CI includes 0 / not BH-significant
+mom_63,1,0.0618,0.0074,0.1162,0.0259,0.1807,0.8571,0.0321,0.0618,0.0547,0.0365,0.9,0.0077,0.434,0.0008,,False,0.5269,REVISE,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+volscaled_mom_252_21,1,0.0507,-0.0074,0.1088,0.0869,0.1535,0.7143,0.0338,0.0507,0.0395,0.0399,0.4,0.0052,0.2209,0.0004,mom_252_21,False,0.4326,STOP,duplicate of mom_252_21 (|rho|>=0.8)
+sharpe_126,1,0.0251,-0.0303,0.0806,0.374,0.0775,0.7143,0.0216,0.0251,0.0131,0.0121,0.7,0.0029,0.3117,0.0006,,False,0.2143,REVISE,non-monotone quintiles; CI includes 0 / not BH-significant
+dist_52w_high,1,0.0149,-0.0473,0.0772,0.6385,0.0409,0.4286,0.0117,0.0149,0.0126,0.0135,0.7,0.0038,0.4183,0.0008,,False,0.1272,STOP,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+sma_ratio_200,1,0.0462,-0.0139,0.1062,0.132,0.1277,0.7143,0.0268,0.0462,0.0388,0.043,0.9,0.0056,0.3069,0.0006,,False,0.3936,REVISE,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+trend_consistency_63,1,0.0553,0.0132,0.0974,0.01,0.2132,0.8571,0.0341,0.0553,0.051,0.0433,0.9,0.0064,0.4335,0.0008,,False,0.4717,REVISE,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+mom_accel,1,0.0335,-0.0227,0.0897,0.2431,0.0968,0.8571,0.0028,0.0335,0.049,0.039,0.7,0.006,0.563,0.001,,False,0.2855,REVISE,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+rev_21,-1,0.0248,-0.023,0.0726,0.3086,0.0757,0.1429,0.0088,0.0248,0.05,0.0181,-0.6,-0.0049,0.7425,0.0014,,False,0.2118,STOP,sign opposite to mechanism; no stable support
+rev_5,-1,0.001,-0.0306,0.0326,0.9487,0.003,0.4286,-0.0053,0.001,0.0165,0.0298,1.0,0.0078,0.7457,0.0014,,False,0.0089,STOP,sign opposite to mechanism; no stable support
+vol_63,-1,0.0467,-0.0225,0.116,0.186,0.1138,0.2857,0.0255,0.0467,0.0695,0.0493,-0.3,-0.0011,0.0833,0.0002,,False,0.3986,STOP,sign opposite to mechanism; no stable support
+beta_spy_126,-1,0.0969,0.0187,0.1752,0.0151,0.2096,0.2857,0.0505,0.0969,0.1524,0.0955,-1.0,-0.0076,0.0509,0.0001,,False,0.8266,STOP,sign opposite to mechanism; no stable support
+max_ret_21,-1,0.0536,-0.0101,0.1173,0.099,0.14,0.2857,0.032,0.0536,0.0683,0.0478,-0.6,-0.0017,0.2154,0.0004,vol_63,False,0.4572,STOP,duplicate of vol_63 (|rho|>=0.8)
+skew_63,-1,-0.0202,-0.0591,0.0187,0.3088,-0.0864,0.5714,-0.0169,-0.0202,-0.0254,-0.021,0.7,0.0023,0.4642,0.0009,,False,-0.1722,REVISE,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+amihud_63,1,0.0246,0.0032,0.0461,0.0244,0.1919,0.8571,0.0132,0.0246,0.0409,0.0241,0.5,0.0036,0.1207,0.0002,,False,0.2099,REVISE,slow state proxy (placebo survives); non-monotone quintiles; CI includes 0 / not BH-significant
+volume_trend_21_126,1,-0.0007,-0.0326,0.0312,0.9674,-0.0034,0.4286,0.0039,-0.0007,-0.0402,-0.0303,0.3,0.0017,0.5541,0.001,,False,-0.0057,STOP,sign opposite to mechanism; no stable support
