@@ -1,0 +1,17 @@
+strategy,cost_mult,net_sharpe,net_cagr
+deployed_lgbm,0.0,0.643,0.1
+rule_mom_252_21,0.0,0.478,0.075
+deployed_lgbm,0.5,0.622,0.096
+rule_mom_252_21,0.5,0.469,0.073
+deployed_lgbm,1.0,0.6,0.092
+rule_mom_252_21,1.0,0.461,0.071
+deployed_lgbm,2.0,0.558,0.084
+rule_mom_252_21,2.0,0.443,0.068
+deployed_lgbm,3.0,0.515,0.076
+rule_mom_252_21,3.0,0.425,0.064
+deployed_lgbm,4.0,0.473,0.068
+rule_mom_252_21,4.0,0.407,0.061
+deployed_lgbm,6.0,0.387,0.053
+rule_mom_252_21,6.0,0.372,0.054
+deployed_lgbm,8.0,0.301,0.038
+rule_mom_252_21,8.0,0.337,0.047

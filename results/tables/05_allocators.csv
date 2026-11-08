@@ -1,0 +1,5 @@
+allocator,net_sharpe,max_dd,turnover_2way_ann,HHI,effective_bets
+equal_weight (top-20),0.591,-0.331,12.807,0.05,20.0
+inverse_vol (top-20),0.616,-0.32,13.416,0.055,18.316
+hrp (top-20),0.614,-0.322,15.153,0.064,15.774
+best-worst spread,0.025,,,,

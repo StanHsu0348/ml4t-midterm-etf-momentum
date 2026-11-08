@@ -1,0 +1,21 @@
+{
+  "triggers": {
+    "watch": 10,
+    "halve_gross": 4,
+    "halt_new_trades": 4,
+    "unwind_to_cash": 3
+  },
+  "drawdown": {
+    "max_dd": "-0.3151227967022946",
+    "peak": "2020-02-14 00:00:00",
+    "trough": "2020-03-23 00:00:00",
+    "recovery": "2020-08-11 00:00:00",
+    "duration_sessions": "26",
+    "recovery_sessions": "98"
+  },
+  "breakeven_bps": {
+    "deployed_lgbm": 66.51230915797832,
+    "rule_mom_252_21": 125.80750100320563
+  },
+  "assumed_bps": 3.3561841083474317
+}
